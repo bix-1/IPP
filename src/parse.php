@@ -36,37 +36,37 @@ $opcodes = array(
   "PUSHS" => array("var"),
   "POPS" => array("var"),
 
-  "ADD" => array("var", "symb_int", "symb_int"),
-  "SUB" => array("var", "symb_int", "symb_int"),
-  "MUL" => array("var", "symb_int", "symb_int"),
+  "ADD" => array("var", "symb", "symb"),
+  "SUB" => array("var", "symb", "symb"),
+  "MUL" => array("var", "symb", "symb"),
   "IDIV" => array(),
 
-  "LT" => array("var", "symb_same", "symb_same"),
-  "GT" => array("var", "symb_same", "symb_same"),
-  "EQ" => array("var", "symb_same", "symb_same"),
+  "LT" => array("var", "symb", "symb"),
+  "GT" => array("var", "symb", "symb"),
+  "EQ" => array("var", "symb", "symb"),
 
   "AND" => array("var", "symb_bool", "symb_bool"),
   "OR" => array("var", "symb_bool", "symb_bool"),
   "NOT" => array("var", "symb_bool", "symb_bool"),
 
-  "INT2CHAR" => array("var", "symb_int"),
-  "STRI2INT" => array("var", "symb_str", "symb_int"),
+  "INT2CHAR" => array("var", "symb"),
+  "STRI2INT" => array("var", "symb", "symb"),
 
   "READ" => array("var", "type"),
   "WRITE" => array("symb"),
-  "CONCAT" => array("var", "symb_str", "symb_str"),
-  "STRLEN" => array("var", "symb_str"),
+  "CONCAT" => array("var", "symb", "symb"),
+  "STRLEN" => array("var", "symb"),
 
-  "GETCHAR" => array("var", "symb_str", "symb_int"),
-  "SETCHAR" => array("var", "symb_int", "symb_str"),
+  "GETCHAR" => array("var", "symb", "symb"),
+  "SETCHAR" => array("var", "symb", "symb"),
   "TYPE" => array("var", "symb"),
   "LABEL" => array("label"),
   "JUMP" => array("label"),
 
-  "JUMPIFEQ" => array("label", "symb_same", "symb_same"),
-  "JUMPIFNEQ" => array("label", "symb_same", "symb_same"),
-  "EXIT" => array("symb_int"),
-  "DPRINT" => array("symb_int"),
+  "JUMPIFEQ" => array("label", "symb", "symb"),
+  "JUMPIFNEQ" => array("label", "symb", "symb"),
+  "EXIT" => array("symb"),
+  "DPRINT" => array("symb"),
   "BREAK" => array(),
 );
 
@@ -151,7 +151,7 @@ function handle_args($instr) {
       exit(23);
     }
     else {
-      echo "<arg$i type=\"$arg[0]\">$arg[1]</arg$i>\n";
+      $output .= "\t\t<arg".($i+1)." type=\"$arg[0]\">$arg[1]</arg".($i+1).">\n";
     }
   }
 }
@@ -159,8 +159,45 @@ function handle_args($instr) {
 // checks whether type of given arg & defined type match
 // returns arg as array of [_type_, _value_] if types match
 // return ["INV"] if types do not match
-function match_type($arg, $type) {
+function handle_type($arg, $type) {
+  switch ($type) {
+    case "var":
+      if (!preg_match("/^(GF|LF|TF)@[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$/", $arg)) {
+        fwrite(STDERR, "ERROR: Invalid variable\n");
+        exit(23);
+      }
+      return array("var", $arg);
 
+    case "label":
+      if (!preg_match("/^[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$/", $arg)) {
+        fwrite(STDERR, "ERROR: Invalid label\n");
+        exit(23);
+      }
+      return array("label", $arg);
+
+    case "symb":
+    // check for var
+    if (
+      preg_match("/^(GF|LF|TF)@[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$/", $arg)
+    ) {
+      return array("var", $arg);
+    }
+    else if (
+      preg_match("/^((int@([+-][0-9]+|[0-9]+))|(bool@(true|false))|(string@(|([^\s#\\\\]|\\\\([0-9][0-9][0-9]))+))|(nil@nil))$/", $arg)
+    ) {
+      $tmp = preg_split("/@/", $arg, 2);
+      return array($tmp[0], $tmp[1]);
+    }
+    else {
+      fwrite(STDERR, "ERROR: Invalid symbol \"$arg\"\n");
+      exit(23);
+    }
+
+    case "type":
+
+    default:
+      break;
+  }
 
 
 }
