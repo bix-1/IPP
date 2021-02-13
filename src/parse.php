@@ -193,7 +193,7 @@ function handle_type($arg, $type) {
       exit(23);
     }
 
-    case "type":
+    case "type":  // TODO
 
     default:
       break;
