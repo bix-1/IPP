@@ -57,7 +57,7 @@ function parse() {
         fwrite(STDERR, "ERROR: Missing header in src file\n");
         exit(21);
       }
-      else return;
+      else break;
     }
 
     $line = fgets(STDIN);
