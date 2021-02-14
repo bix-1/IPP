@@ -1,5 +1,5 @@
 # IPP Project 2020/21
-Project for course IPP (Principles of Programming Languages) at FIT BUT 2021
+Project for course [IPP](https://www.fit.vut.cz/study/course/14009/.cs) (Principles of Programming Languages) at FIT BUT 2021
 ## Description
 - Set of scripts for interpretation of unstructured imperative language IPPcode21; consisting of parser (PHP 7.4), interpret (Python 3.8) & testing script (PHP 7.4)
 ## [Assignment](https://github.com/bix-1/IPP/blob/master/doc/assignment.pdf) *(in Czech)*
