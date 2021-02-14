@@ -1,4 +1,5 @@
 <?php
+$opts = array();
 $output = "";
 
 abstract class State {
@@ -196,21 +197,68 @@ function correct_string($str) {
 }
 
 
-# OPTION HANDLING
-if ($argc > 2) {
-  fwrite(STDERR, "ERROR: Invalid options\n");
-  exit(10);
-}
-else if ($argc == 2) {
-  if (!strcmp($argv[1],"--help")) {
-    $output .= "This is help\n";            # TODO
-    exit(0);
+// OPTION HANDLING
+if ($argc > 1) {
+  if (!strcmp($argv[1], "--help")) {
+    if ($argc == 2) {
+      // TODO
+      echo "HELP\n";
+      exit(0);
+    }
+    else {
+      fwrite(STDERR, "ERROR: Invalid Options\n");
+      exit(10);
+    }
+  }
+  else if (preg_match("/^--stats=/", $argv[1])) {
+    global $opts;
+
+    // iterate over opts
+    for ($i = 1; $i < $argc; $i++) {
+      // check for new file opt
+      if (preg_match("/^--stats=/", $argv[$i])) {
+        if (preg_match("/^--stats=\s*$/", $argv[$i])) {
+          fwrite(STDERR, "ERROR: Invalid Options\n");
+          exit(10);
+        }
+        // TODO move to end near actual output
+        // + keep track of filenames ??
+        // get file handle
+        $tmp = array();
+        preg_match("/^--stats=(.*)/", $argv[$i], $tmp);
+        $file = fopen($tmp[1], "w");
+        if (!$file) {
+          fwrite(STDERR, "ERROR: Failed to open file\n");
+          exit(12);
+        }
+
+        array_push($opts, array($file));
+      }
+      else { // check for --stats opts
+        if (preg_match("/^\-\-(loc|comments|labels|jumps|fwjumps|backjumps|badjumps)/", $argv[$i])) {
+          array_push(
+            $opts[count($opts)-1],
+            str_replace("--", "", $argv[$i])
+          );
+        }
+        else {
+          fwrite(STDERR, "ERROR: Invalid Options\n");
+          exit(10);
+        }
+      }
+
+    }
+
+    var_dump($opts);
+    echo "\n\n\n";
+
   }
   else {
-    fwrite(STDERR, "ERROR: Invalid options\n");
-    exit(1);
+    fwrite(STDERR, "ERROR: Invalid Options\n");
+    exit(10);
   }
 }
+
 
 # PARSING
 parse();
