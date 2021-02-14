@@ -69,8 +69,8 @@ function parse() {
     }
 
     // HEADER
-    if ($state == State::Start) { // TODO 21212121
-      if (preg_match("/^\s*\.IPPcode19\s*$/i", "$line")) {
+    if ($state == State::Start) {
+      if (preg_match("/^\s*\.IPPcode21\s*$/i", "$line")) {
         $state = State::Command;
         continue;
       }
