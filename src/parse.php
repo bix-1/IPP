@@ -187,11 +187,11 @@ function handle_type($arg, $type) {
 }
 
 function correct_string($str) {
-  str_replace("\"", "&quot;", $str);
-  str_replace("&", "&amp;", $str);
-  str_replace("'", "&apos;", $str);
-  str_replace("<", "&lt;", $str);
-  str_replace(">", "&gt;", $str);
+  $str = str_replace("\"", "&quot;", $str);
+  $str = str_replace("&", "&amp;", $str);
+  $str = str_replace("'", "&apos;", $str);
+  $str = str_replace("<", "&lt;", $str);
+  $str = str_replace(">", "&gt;", $str);
   return $str;
 }
 
