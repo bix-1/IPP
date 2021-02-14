@@ -1,6 +1,11 @@
 <?php
-$opts = array();
+// TODO
+// jump counters
+
+
 $output = "";
+// _stats_ opt counters
+$loc = $comments = $labels = $jumps = $fwjumps = $backjumps = $badjumps = 0;
 
 abstract class State {
   const Start = 0;
@@ -46,7 +51,9 @@ $opcodes = array(
 );
 
 
-function parse() {
+function parse($opts) {
+  global $loc, $comments, $labels, $jumps, $fwjumps, $backjumps, $badjumps;
+
   $state = State::Start;
   global $output;
   $output .= "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -63,11 +70,11 @@ function parse() {
 
     $line = fgets(STDIN);
     // remove comments
-    $line = preg_replace("/#.*/", "", $line);
+    $n = 0;
+    $line = preg_replace("/#.*/", "", $line, -1, $n);
+    if ($n != 0) $comments++;
     // skip empty line
-    if ( preg_match("/^\s*$/", $line)) {
-      continue;
-    }
+    if (preg_match("/^\s*$/", $line)) continue;
 
     // HEADER
     if ($state == State::Start) {
@@ -82,6 +89,7 @@ function parse() {
     }
     // COMMANDS
     else if ($state == State::Command) {
+      $loc++;
       // split into words
       $instr = preg_split("/\s+/", ltrim($line));
       // remove last _blank_ element
@@ -91,8 +99,30 @@ function parse() {
     }
   }
 
+  // print output in XML
   $output .= "</program>\n";
   echo $output;
+
+  // handle _stats_ opt
+  if (count($opts) > 0) {
+    foreach ($opts as $set) {
+      $file = fopen($set[0], "w");
+      if (!$file) {
+        fwrite(STDERR, "ERROR: Failed to open file\n");
+        exit(12);
+      }
+
+      echo "\n\n\n";
+      for ($i = 1; $i < count($set); $i++) {
+        // TODO delete
+        echo "$set[$i]\t\t${$set[$i]}\n";
+
+        fwrite($file, ${$set[$i]}."\n");
+      }
+      echo "\n";
+    }
+  }
+
 }
 
 function handle_instr($instr) {
@@ -105,6 +135,17 @@ function handle_instr($instr) {
   if (!array_key_exists($opcode, $opcodes)) {
     fwrite(STDERR, "ERROR: Invalid OPCODE: \"$opcode\"\n");
     exit(22);
+  }
+
+  switch ($opcode) {
+    case "LABEL":
+      global $labels; $labels++;
+      break;
+
+    case "JUMP": case "JUMPIFEQ": case "JUMPIFNEQ":
+    case "CALL": case "RETURN":
+      global $jumps; $jumps++;
+      break;
   }
 
   $output .= "\t<instruction order=\"$cnt\" opcode=\"$opcode\">\n";
@@ -198,6 +239,7 @@ function correct_string($str) {
 
 
 // OPTION HANDLING
+$opts = array();
 if ($argc > 1) {
   if (!strcmp($argv[1], "--help")) {
     if ($argc == 2) {
@@ -211,8 +253,6 @@ if ($argc > 1) {
     }
   }
   else if (preg_match("/^--stats=/", $argv[1])) {
-    global $opts;
-
     // iterate over opts
     for ($i = 1; $i < $argc; $i++) {
       // check for new file opt
@@ -221,18 +261,14 @@ if ($argc > 1) {
           fwrite(STDERR, "ERROR: Invalid Options\n");
           exit(10);
         }
-        // TODO move to end near actual output
-        // + keep track of filenames ??
-        // get file handle
-        $tmp = array();
-        preg_match("/^--stats=(.*)/", $argv[$i], $tmp);
-        $file = fopen($tmp[1], "w");
-        if (!$file) {
-          fwrite(STDERR, "ERROR: Failed to open file\n");
-          exit(12);
-        }
 
-        array_push($opts, array($file));
+        // add new stats set
+        array_push(
+          $opts,
+          array(
+            str_replace("--stats=", "", $argv[$i])
+          )
+        );
       }
       else { // check for --stats opts
         if (preg_match("/^\-\-(loc|comments|labels|jumps|fwjumps|backjumps|badjumps)/", $argv[$i])) {
@@ -246,13 +282,8 @@ if ($argc > 1) {
           exit(10);
         }
       }
-
-    }
-
-    var_dump($opts);
-    echo "\n\n\n";
-
-  }
+    } // end interation
+  } // end opt parsing
   else {
     fwrite(STDERR, "ERROR: Invalid Options\n");
     exit(10);
@@ -261,6 +292,6 @@ if ($argc > 1) {
 
 
 # PARSING
-parse();
+parse($opts);
 exit(0);
 ?>
