@@ -6,6 +6,9 @@
 $output = "";
 // _stats_ opt counters
 $loc = $comments = $labels = $jumps = $fwjumps = $backjumps = $badjumps = 0;
+// _stats_ opt trackers
+$label_list = array();
+$jmp_list = array();
 
 abstract class State {
   const Start = 0;
@@ -103,7 +106,13 @@ function parse($opts) {
   $output .= "</program>\n";
   echo $output;
 
-  // handle _stats_ opt
+  //    handle _stats_ opts
+  // handle bad jumps
+  global $jmp_list;
+  foreach ($jmp_list as $n) {
+    $badjumps += $n;
+  }
+  // output to files
   if (count($opts) > 0) {
     foreach ($opts as $set) {
       $file = fopen($set[0], "w");
@@ -112,14 +121,9 @@ function parse($opts) {
         exit(12);
       }
 
-      echo "\n\n\n";
       for ($i = 1; $i < count($set); $i++) {
-        // TODO delete
-        echo "$set[$i]\t\t${$set[$i]}\n";
-
         fwrite($file, ${$set[$i]}."\n");
       }
-      echo "\n";
     }
   }
 
@@ -139,11 +143,32 @@ function handle_instr($instr) {
 
   switch ($opcode) {
     case "LABEL":
-      global $labels; $labels++;
+      global $labels, $label_list, $jmp_list, $fwjumps;
+      $label = $instr[1];
+      $labels++;
+      array_push($label_list, $label);
+      if ($key = array_search($label, $jmp_list)) {
+        $fwjumps++;
+        unset($jmp_list[$key]);
+      }
       break;
 
-    case "JUMP": case "JUMPIFEQ": case "JUMPIFNEQ":
-    case "CALL": case "RETURN":
+    case "JUMP": case "JUMPIFEQ": case "JUMPIFNEQ": case "CALL":
+      global $label_list, $jmp_list;
+      $label = $instr[1];
+      if (in_array($label, $label_list)) {
+        global $backjumps; $backjumps++;
+        unset($jmp_list[$label]);
+      }
+      else {
+        if ($key = array_search($label, $jmp_list)) {
+          $jmp_list[$label]++;
+        }
+        else {
+          $jmp_list[$label] = 1;
+        }
+      }
+    case "RETURN":
       global $jumps; $jumps++;
       break;
   }
@@ -262,13 +287,15 @@ if ($argc > 1) {
           exit(10);
         }
 
+        $filename = str_replace("--stats=", "", $argv[$i]);
+        // check whether filename unique
+        if (in_array($filename, array_column($opts, 0))) {
+          fwrite(STDERR, "ERROR: --stats files must by unique\n");
+          exit(12);
+        }
+
         // add new stats set
-        array_push(
-          $opts,
-          array(
-            str_replace("--stats=", "", $argv[$i])
-          )
-        );
+        array_push($opts, array($filename));
       }
       else { // check for --stats opts
         if (preg_match("/^\-\-(loc|comments|labels|jumps|fwjumps|backjumps|badjumps)/", $argv[$i])) {
