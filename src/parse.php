@@ -1,12 +1,9 @@
 <?php
-// TODO
-// jump counters
-
-
+//__________GLOBALS__________
 $output = "";
-// _stats_ opt counters
+// counters for _stats_ opt
 $loc = $comments = $labels = $jumps = $fwjumps = $backjumps = $badjumps = 0;
-// _stats_ opt trackers
+// trackers _stats_ opt
 $label_list = array();
 $jmp_list = array();
 
@@ -15,6 +12,8 @@ abstract class State {
   const Command = 1;
 }
 
+// list of all viable operation codes
+// & types of their arguments
 $opcodes = array(
   "MOVE" => array("var", "symb"),
   "CREATEFRAME" => array(),
@@ -56,13 +55,14 @@ $opcodes = array(
 
 function parse($opts) {
   global $loc, $comments, $labels, $jumps, $fwjumps, $backjumps, $badjumps;
-
-  $state = State::Start;
   global $output;
+
   $output .= "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
   $output .= "<program language=\"IPPcode21\">\n";
+  $state = State::Start;
 
   while (true) {
+    // handle EOF
     if (feof(STDIN)) {
       if ($state == State::Start) {
         fwrite(STDERR, "ERROR: Missing header in src file\n");
@@ -72,6 +72,7 @@ function parse($opts) {
     }
 
     $line = fgets(STDIN);
+
     // remove comments
     $n = 0;
     $line = preg_replace("/#.*/", "", $line, -1, $n);
@@ -102,7 +103,7 @@ function parse($opts) {
     }
   }
 
-  // print output in XML
+  // print output in XML to STDIN
   $output .= "</program>\n";
   echo $output;
 
@@ -115,6 +116,7 @@ function parse($opts) {
   // output to files
   if (count($opts) > 0) {
     foreach ($opts as $set) {
+      // get file handle
       $file = fopen($set[0], "w");
       if (!$file) {
         fwrite(STDERR, "ERROR: Failed to open file\n");
@@ -135,12 +137,13 @@ function handle_instr($instr) {
   $cnt++;
   $opcode = $instr[0] = strtoupper($instr[0]);
 
-  // check for OPCODE
+  // check validity of OPCODE
   if (!array_key_exists($opcode, $opcodes)) {
     fwrite(STDERR, "ERROR: Invalid OPCODE: \"$opcode\"\n");
     exit(22);
   }
 
+  // handle counters & trackers for _stats_ opt
   switch ($opcode) {
     case "LABEL":
       global $labels, $label_list, $jmp_list, $fwjumps;
@@ -268,8 +271,21 @@ $opts = array();
 if ($argc > 1) {
   if (!strcmp($argv[1], "--help")) {
     if ($argc == 2) {
-      // TODO
-      echo "HELP\n";
+      echo "This is Help for module parse.php\n";
+      echo " - Run using `php7.4 parse.php {options} <input`\n";
+      echo "Options:\n";
+      echo "  --help\t\t\tDisplays this help\n";
+      echo "  --stats=file {options}\tPrints statistics to given file\n";
+      echo "\t- NOTE: Both --stats & its options are repeatable; files must be unique\n";
+      echo "\tViable options: [Number of ...]\n";
+      echo "\t--loc\t\t\tLines of code\n";
+      echo "\t--comments\t\tLines with comments\n";
+      echo "\t--labels\t\tDefined labels\n";
+      echo "\t--jumps\t\t\tJump instructions\n";
+      echo "\t--fwjumps\t\tForward jumps\n";
+      echo "\t--backjumps\t\tBackward jumps\n";
+      echo "\t--badjumps\t\tInvalid jumps\n";
+      echo "\n";
       exit(0);
     }
     else {
@@ -316,7 +332,6 @@ if ($argc > 1) {
     exit(10);
   }
 }
-
 
 # PARSING
 parse($opts);
