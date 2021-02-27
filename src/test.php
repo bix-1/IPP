@@ -1,6 +1,6 @@
 <?php
 // TODO
-//    dirs ??
+// unfuck output
 
 // NOTE
 // tests:
@@ -11,7 +11,7 @@
 //    output:   -- html
 
 
-class Filenames {
+class Handles {
   public $dir = ".";
   public $parser = "parse.php";
   public $intr = "interpret.py";
@@ -19,27 +19,18 @@ class Filenames {
   public $cfg = "/pub/courses/ipp/jexamxml/options";
 }
 
-class Handles {
-  public $dir;
-  public $parser;
-  public $intr;
-  public $xml;
-  public $cfg;
-}
-
-
-$filenames = new Filenames();
+$handles = new Handles();
 $recurs = false;
 
-parse_opts($argc, $argv, $filenames, $recurs);
-$handles = get_handles($filenames);
+parse_opts($argc, $argv, $handles, $recurs);
+check_files($handles);
 
-$record = iterate_tests($handles, $filenames->dir, $recurs);
+$record = iterate_tests($handles, $recurs);
+echo "PASSED: " . $record[0] . "\nFAILED: " . $record[1] . "\n";
 
 
 
-
-function parse_opts($argc, $argv, &$filenames, &$recurs) {
+function parse_opts($argc, $argv, &$handles, &$recurs) {
   for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
       case "--help":
@@ -65,7 +56,7 @@ function parse_opts($argc, $argv, &$filenames, &$recurs) {
           fwrite(STDERR, "INVALID OPTIONS: Cannot combine --parse-only & interpret options\n");
           exit(10);
         }
-        $filenames->intr = "";
+        $handles->intr = "";
         break;
 
       case "--int-only":
@@ -73,24 +64,24 @@ function parse_opts($argc, $argv, &$filenames, &$recurs) {
           fwrite(STDERR, "INVALID OPTIONS: Cannot combine --int-only & parse options\n");
           exit(10);
         }
-        $filenames->parser = "";
+        $handles->parser = "";
         break;
 
       default: // check for opts with parameter
         if (preg_match("/^--directory=/", $argv[$i])) {
-          $filenames->dir = str_replace("--directory=", "", $argv[$i]);
+          $handles->dir = str_replace("--directory=", "", $argv[$i]);
         }
         else if (preg_match("/^--parse-script=/", $argv[$i])) {
-          $filenames->parser = str_replace("--parse-script=", "", $argv[$i]);
+          $handles->parser = str_replace("--parse-script=", "", $argv[$i]);
         }
         else if (preg_match("/^--int-script=/", $argv[$i])) {
-          $filenames->intr = str_replace("--int-script=", "", $argv[$i]);
+          $handles->intr = str_replace("--int-script=", "", $argv[$i]);
         }
         else if (preg_match("/^--jexamxml=/", $argv[$i])) {
-          $filenames->xml = str_replace("--jexamxml=", "", $argv[$i]);
+          $handles->xml = str_replace("--jexamxml=", "", $argv[$i]);
         }
         else if (preg_match("/^--jexamcfg=/", $argv[$i])) {
-          $filenames->cfg = str_replace("--jexamcfg=", "", $argv[$i]);
+          $handles->cfg = str_replace("--jexamcfg=", "", $argv[$i]);
         }
         else {
           fwrite(STDERR, "INVALID OPTIONS: Unknown option\n");
@@ -102,49 +93,125 @@ function parse_opts($argc, $argv, &$filenames, &$recurs) {
 }
 
 
-function get_handles($filenames) {
-  $handles = new Handles();
-  foreach ($filenames as $key => $file) {
-    if ($key == "dir" || $file == "") continue;
-
-    $handles->$key = fopen($file, "r");
-    if (!$handles->$key) {
-      fwrite(STDERR, "ERROR: Failed to open [$file]\n");
-      exit(41);
-    }
-  }
-
-  return $handles;
-}
-
-
-function iterate_tests($dir, $recurs) {
-  // $out = ""; $ret = 0;
-  // exec("php7.4 parse.php <in", $out, $ret);
-  // echo implode("\n", $out) . "\n\n$ret\n";
-  // exit(0);
-
+function iterate_tests($handles, $recurs) {
+  $passed = 0; $failed = 0; $failed_list = "";
   $out = ""; $ret = 0;
 
   if ($recurs) {
     // construct iterator
-    $it = new RecursiveDirectoryIterator($dir);
+    $it = new RecursiveDirectoryIterator($handles->dir);
     // iterate files
     foreach (new RecursiveIteratorIterator($it) as $file) {
       if ($file->getExtension() == "src") {
-        // echo "$file\n";
+        // EXECUTION
+        $name = str_replace(".src", "", $file);
+        $command = "php7.4 " . $handles->parser .
+          " <" . $file . " 2>/dev/null";
+        exec($command, $out, $ret);
+
+        // VALIDATION
+        // check return values
+        if ($ret == get_ret($name . ".rc")) {
+          out_tmp($out, $name);
+          $command = "java -jar " . $handles->xml . " $name.out_new $name.out " . $handles->cfg;
+          exec($command, $out, $res);
+          echo implode("\n", $out) . "\n\n";
+          // TEAR DOWN
+          exec("rm $name.out_new");
+
+          if ($res == 0) {
+            $passed++;
+          }
+          else {
+            $failed++;
+          }
+        }
+        else  {
+          // echo "$ret --- " . get_ret($handles->dir . $name . ".rc") . "\n";
+          $failed++;
+        }
       }
     }
   }
   else {
-    foreach (new DirectoryIterator($dir) as $file) {
-      if($file->isDot()) continue;
-      // echo $file->getFilename() . "\n";
-      exec("php7.4 parse.php <", $out, $ret);
+    foreach (new DirectoryIterator($handles->dir) as $file) {
+      if ($file->getExtension() == "src") {
+        // EXECUTION
+        $name = str_replace(".src", "", $file);
+        $command = "php7.4 " . $handles->parser .
+          " <" . $handles->dir . $file . " 2>/dev/null";
+        exec($command, $out, $ret);
+
+        // VALIDATION
+        // check return values
+        if ($ret == get_ret($handles->dir . $name . ".rc")) {
+          if ($ret != 0) {
+            $passed++; continue;
+          }
+
+          out_tmp($out, $name);
+          $command = "java -jar " . $handles->xml . " $name.out_new " . $handles->dir . "$name.out /dev/null " . $handles->cfg;
+          exec($command, $out, $res);
+          // echo implode("\n", $out) . "\n\n";
+          // TEAR DOWN
+          exec("rm $name.out_new");
+
+          if ($res == 0) {
+            $passed++;
+          }
+          else {
+            $failed++;
+          }
+        }
+        else  {
+          // echo "$ret --- " . get_ret($handles->dir . $name . ".rc") . "\n";
+          $failed++;
+        }
+
+
+
+        // implode("\n", $out)
+        // "\n\n$ret\n";
+      }
     }
   }
 
+  return array($passed, $failed, $failed_list);
+}
 
-  return "";  // TODO records
+
+// check the validity of given filenames
+function check_files($filenames) {
+  if (
+    !is_dir($filenames->dir)
+    || !file_exists($filenames->parser)
+    || !file_exists($filenames->intr)
+    || !file_exists($filenames->xml)
+    || !file_exists($filenames->cfg)
+  ){
+    fwrite(STDERR, "ERROR: Invalid File was specified\n");
+    exit(41);
+  }
+}
+
+
+function get_ret($filename) {
+  $file = fopen($filename, "r");
+  if (!$file) {
+    fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
+    exit(41);
+  }
+  return fgets($file);
+}
+
+
+function out_tmp($out, $name) {
+  $name .= ".out_new";
+  if (file_exists($name)) {
+    fwrite(STDERR, "ERROR: Failed to create file\n");
+    exit(41);
+  }
+  $file = fopen($name, "w");
+  fwrite($file, implode("\n", $out));
 }
 ?>
