@@ -2,6 +2,15 @@
 // TODO
 //    dirs ??
 
+// NOTE
+// tests:
+//    iterate:  -- iterate filesys
+//      exec
+//      validate
+//      record:   -- passed / failed + list_of_failed
+//    output:   -- html
+
+
 class Filenames {
   public $dir = ".";
   public $parser = "parse.php";
@@ -20,20 +29,22 @@ class Handles {
 
 
 $filenames = new Filenames();
+$recurs = false;
 
-parse_opts($argc, $argv, $filenames);
+parse_opts($argc, $argv, $filenames, $recurs);
 $handles = get_handles($filenames);
 
+$record = iterate_tests($handles, $filenames->dir, $recurs);
 
 
 
 
-function parse_opts($argc, $argv, &$filenames) {
+function parse_opts($argc, $argv, &$filenames, &$recurs) {
   for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
       case "--help":
         if ($argc > 2) {
-          fwrite(STDERR, "ERROR: Invalid Options\n");
+          fwrite(STDERR, "INVALID OPTIONS: Cannot combine --help with others\n");
           exit(10);
         }
         else {
@@ -45,9 +56,27 @@ function parse_opts($argc, $argv, &$filenames) {
         }
         exit(0);
 
-      // case "":
+      case "--recursive":
+        $recurs = true;
+        break;
 
-      default: // check for opts with parameter using regex
+      case "--parse-only":
+        if (count(preg_grep("/^--int-/", $argv)) != 0) {
+          fwrite(STDERR, "INVALID OPTIONS: Cannot combine --parse-only & interpret options\n");
+          exit(10);
+        }
+        $filenames->intr = "";
+        break;
+
+      case "--int-only":
+        if (count(preg_grep("/^--parse-/", $argv)) != 0) {
+          fwrite(STDERR, "INVALID OPTIONS: Cannot combine --int-only & parse options\n");
+          exit(10);
+        }
+        $filenames->parser = "";
+        break;
+
+      default: // check for opts with parameter
         if (preg_match("/^--directory=/", $argv[$i])) {
           $filenames->dir = str_replace("--directory=", "", $argv[$i]);
         }
@@ -64,7 +93,7 @@ function parse_opts($argc, $argv, &$filenames) {
           $filenames->cfg = str_replace("--jexamcfg=", "", $argv[$i]);
         }
         else {
-          fwrite(STDERR, "ERROR: Invalid Options\n");
+          fwrite(STDERR, "INVALID OPTIONS: Unknown option\n");
           exit(10);
         }
         break;
@@ -76,15 +105,46 @@ function parse_opts($argc, $argv, &$filenames) {
 function get_handles($filenames) {
   $handles = new Handles();
   foreach ($filenames as $key => $file) {
-    if ($file == "") continue;
+    if ($key == "dir" || $file == "") continue;
 
-    $handles->$file = fopen($file, "r");
-    if (!$handles->$file) {
+    $handles->$key = fopen($file, "r");
+    if (!$handles->$key) {
       fwrite(STDERR, "ERROR: Failed to open [$file]\n");
       exit(41);
     }
   }
 
   return $handles;
+}
+
+
+function iterate_tests($dir, $recurs) {
+  // $out = ""; $ret = 0;
+  // exec("php7.4 parse.php <in", $out, $ret);
+  // echo implode("\n", $out) . "\n\n$ret\n";
+  // exit(0);
+
+  $out = ""; $ret = 0;
+
+  if ($recurs) {
+    // construct iterator
+    $it = new RecursiveDirectoryIterator($dir);
+    // iterate files
+    foreach (new RecursiveIteratorIterator($it) as $file) {
+      if ($file->getExtension() == "src") {
+        // echo "$file\n";
+      }
+    }
+  }
+  else {
+    foreach (new DirectoryIterator($dir) as $file) {
+      if($file->isDot()) continue;
+      // echo $file->getFilename() . "\n";
+      exec("php7.4 parse.php <", $out, $ret);
+    }
+  }
+
+
+  return "";  // TODO records
 }
 ?>
