@@ -96,8 +96,6 @@ function parse($opts) {
       $loc++;
       // split into words
       $instr = preg_split("/\s+/", ltrim($line));
-      // remove last _blank_ element
-      array_pop($instr);
       // parse instruction
       handle_instr($instr);
     }
