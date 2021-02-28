@@ -28,6 +28,7 @@ check_files($handles);
 $record = iterate_tests($handles, $recurs);
 echo "PASSED: " . $record[0] . "\nFAILED: " . $record[1] . "\n";
 
+echo $record[2];
 
 
 function parse_opts($argc, $argv, &$handles, &$recurs) {
@@ -95,83 +96,75 @@ function parse_opts($argc, $argv, &$handles, &$recurs) {
 
 function iterate_tests($handles, $recurs) {
   $passed = 0; $failed = 0; $failed_list = "";
-  $out = ""; $ret = 0;
+  $ret = 0;
 
   if ($recurs) {
     // construct iterator
     $it = new RecursiveDirectoryIterator($handles->dir);
-    // iterate files
+    // iterate files recursively
     foreach (new RecursiveIteratorIterator($it) as $file) {
+      $out = "";  // for XML output
+
       if ($file->getExtension() == "src") {
+        $filename = realpath($file);
+
         // EXECUTION
-        $name = str_replace(".src", "", $file);
-        $command = "php7.4 " . $handles->parser .
-          " <" . $file . " 2>/dev/null";
+        $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
         exec($command, $out, $ret);
 
         // VALIDATION
         // check return values
-        if ($ret == get_ret($name . ".rc")) {
-          out_tmp($out, $name);
-          $command = "java -jar " . $handles->xml . " $name.out_new $name.out " . $handles->cfg;
-          exec($command, $out, $res);
-          echo implode("\n", $out) . "\n\n";
-          // TEAR DOWN
-          exec("rm $name.out_new");
+        if ($ret == get_ret($filename)) {
+          if ($ret != 0) { // test case passed && parsing failed
+            $passed++; continue;
+          } // XML output needs to be checked otherwise
 
-          if ($res == 0) {
+          if (check_output($out, $filename, $handles)) {
             $passed++;
           }
-          else {
+          else { // TODO
             $failed++;
+            $failed_list .= "$filename\n";
           }
         }
         else  {
-          // echo "$ret --- " . get_ret($handles->dir . $name . ".rc") . "\n";
           $failed++;
+          $failed_list .= "$filename\n";
         }
       }
     }
   }
   else {
+    // iterate files in specified dir
     foreach (new DirectoryIterator($handles->dir) as $file) {
+      $out = "";  // collects XML output
+
       if ($file->getExtension() == "src") {
+        $filename = $handles->dir . $file->getFilename();
+
         // EXECUTION
-        $name = str_replace(".src", "", $file);
-        $command = "php7.4 " . $handles->parser .
-          " <" . $handles->dir . $file . " 2>/dev/null";
+        $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
         exec($command, $out, $ret);
 
         // VALIDATION
         // check return values
-        if ($ret == get_ret($handles->dir . $name . ".rc")) {
-          if ($ret != 0) {
+        if ($ret == get_ret($filename)) {
+          if ($ret != 0) { // test case passed && parsing failed
             $passed++; continue;
-          }
+          } // XML output needs to be checked otherwise
 
-          out_tmp($out, $name);
-          $command = "java -jar " . $handles->xml . " $name.out_new " . $handles->dir . "$name.out /dev/null " . $handles->cfg;
-          exec($command, $out, $res);
-          // echo implode("\n", $out) . "\n\n";
-          // TEAR DOWN
-          exec("rm $name.out_new");
-
-          if ($res == 0) {
+          if (check_output($out, $filename, $handles)) {
             $passed++;
           }
-          else {
+          else { // TODO
             $failed++;
+            $failed_list .= "$filename\n";
           }
         }
-        else  {
-          // echo "$ret --- " . get_ret($handles->dir . $name . ".rc") . "\n";
+        else  { // TODO
           $failed++;
+          $failed_list .= "$filename\n";
         }
-
-
-
-        // implode("\n", $out)
-        // "\n\n$ret\n";
       }
     }
   }
@@ -194,8 +187,10 @@ function check_files($filenames) {
   }
 }
 
-
+// returns expected return value of test case
+// expects [string] filename (.src)
 function get_ret($filename) {
+  $filename = str_replace(".src", ".rc", $filename);
   $file = fopen($filename, "r");
   if (!$file) {
     fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
@@ -205,13 +200,33 @@ function get_ret($filename) {
 }
 
 
-function out_tmp($out, $name) {
-  $name .= ".out_new";
-  if (file_exists($name)) {
+// compares generated output with reference file
+// expects [string] output & [string] filename (.src) & file handles
+// returns [bool] TRUE if files matched, FALSE otherwise
+function check_output($out, $filename, $handles) {
+  $filename = str_replace(".src", ".out", $filename);
+
+  // generate file with output
+  if (file_exists("$filename.new")) {
     fwrite(STDERR, "ERROR: Failed to create file\n");
     exit(41);
   }
-  $file = fopen($name, "w");
+  $file = fopen("$filename.new", "w");
+  if (!$file) {
+    fwrite(STDERR, "ERROR: Failed to open file\n");
+    exit(41);
+  }
   fwrite($file, implode("\n", $out));
+
+  // compare files using A7Soft JExamXML
+  $ret = 0;
+  $command = "java -jar " . $handles->xml .
+    " $filename $filename.new /dev/null " . $handles->cfg;
+  exec($command, $out, $ret);
+
+  // TEAR DOWN
+  exec("rm -f $filename.new $filename.new.log");
+
+  return $ret == 0;
 }
 ?>
