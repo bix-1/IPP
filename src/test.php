@@ -1,6 +1,5 @@
 <?php
 // TODO
-// unfuck output
 
 // NOTE
 // tests:
@@ -26,10 +25,11 @@ parse_opts($argc, $argv, $handles, $recurs);
 check_files($handles);
 
 $record = iterate_tests($handles, $recurs);
-echo "PASSED: " . $record[0] . "\nFAILED: " . $record[1] . "\n";
+// echo "PASSED: " . $record[0] . "\nFAILED: " . $record[1] . "\n";
+//
+// echo $record[2];
 
-echo $record[2];
-
+handle_output($record);
 
 function parse_opts($argc, $argv, &$handles, &$recurs) {
   for ($i = 1; $i < $argc; $i++) {
@@ -228,5 +228,50 @@ function check_output($out, $filename, $handles) {
   exec("rm -f $filename.new $filename.new.log");
 
   return $ret == 0;
+}
+
+
+function handle_output($record) {
+  $passed = $record[0];
+  $failed = $record[1];
+  $total = $passed + $failed;
+  echo "<!DOCTYPE html>
+  <html>
+  <head>
+    <style>
+      th {
+        width: 100px;
+        padding: 5px;
+      }
+      table tr#ROW1  {background-color:#7bb6ed}
+      table tr#ROW2  {background-color:#ed7b7b}
+      table tr#ROW3  {background-color:#7bed7f}
+    </style>
+  </head>
+  <body>
+  <table>
+    <tr id=\"ROW1\">
+      <th style=\"text-align:left\"><b>TOTAL</b></th>
+      <th style=\"text-align:right\">$total</th>
+      <th style=\"text-align:right\">%</th>
+    </tr>
+    <tr id=\"ROW2\">
+      <th style=\"text-align:left\"><b>FAILED</b></th>
+      <th style=\"text-align:right\">$failed</th>
+      <th style=\"text-align:right\">". get_perc($failed, $total) ."</th>
+    </tr>
+    <tr id=\"ROW3\">
+      <th style=\"text-align:left\"><b>PASSED</b></th>
+      <th style=\"text-align:right\">$passed</th>
+      <th style=\"text-align:right\">". get_perc($passed, $total) ."</th>
+    </tr>
+  </table>
+  </body>
+  </html>
+";
+}
+
+function get_perc($val, $total) {
+  return number_format(($val / $total) * 100, 2);
 }
 ?>
