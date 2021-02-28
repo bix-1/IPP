@@ -94,8 +94,8 @@ function parse($opts) {
     // COMMANDS
     else if ($state == State::Command) {
       $loc++;
-      // split into words
-      $instr = preg_split("/\s+/", ltrim($line));
+      // split into words & remove empty elements
+      $instr = array_filter(preg_split("/\s+/", ltrim($line)));
       // parse instruction
       handle_instr($instr);
     }
