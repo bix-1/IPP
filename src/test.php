@@ -1,29 +1,37 @@
 <?php
 // TODO
+//    help
+//    parse + interp only
+//    .in / .out missing -- create empty
 
 
 class Handles {
-  public $dir = ".";
-  public $parser = "parse.php";
-  public $intr = "interpret.py";
+  //
+  public $dir = ".";              // starting directory
+  public $parser = "parse.php";   //
+  public $intr = "interpret.py";  //
   public $xml = "/pub/courses/ipp/jexamxml/jexamxml.jar";
   public $cfg = "/pub/courses/ipp/jexamxml/options";
+  // flags
+  public $recurs = false; // recursive traversal of files
+  public $parse = true;   // run src files through: parser
+  public $interp = true;  //                        interpret
 }
 
+
 $handles = new Handles();
-$recurs = false;
 
-parse_opts($argc, $argv, $handles, $recurs);
-check_files($handles);
+handle_opts($argc, $argv, $handles);
 
-$record = iterate_tests($handles, $recurs);
-// echo "PASSED: " . $record[0] . "\nFAILED: " . $record[1] . "\n";
-//
-// echo $record[2];
+$record = iterate_tests($handles);
 
 handle_output($record);
 
-function parse_opts($argc, $argv, &$handles, &$recurs) {
+
+// handles commandline options
+// expects options (as argc & argv);
+// returns specified options as [object] handles & [flag] recurs
+function handle_opts($argc, $argv, &$handles) {
   for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
       case "--help":
@@ -36,12 +44,11 @@ function parse_opts($argc, $argv, &$handles, &$recurs) {
           echo " - Run using `php7.4 test.php {options} <input`\n";
           echo "Options:\n";
           // TODO
-
         }
         exit(0);
 
       case "--recursive":
-        $recurs = true;
+        $handles->recurs = true;
         break;
 
       case "--parse-only":
@@ -49,6 +56,7 @@ function parse_opts($argc, $argv, &$handles, &$recurs) {
           fwrite(STDERR, "INVALID OPTIONS: Cannot combine --parse-only & interpret options\n");
           exit(10);
         }
+        $handles->interp = false;
         $handles->intr = "";
         break;
 
@@ -57,6 +65,7 @@ function parse_opts($argc, $argv, &$handles, &$recurs) {
           fwrite(STDERR, "INVALID OPTIONS: Cannot combine --int-only & parse options\n");
           exit(10);
         }
+        $handles->parse = false;
         $handles->parser = "";
         break;
 
@@ -83,45 +92,27 @@ function parse_opts($argc, $argv, &$handles, &$recurs) {
         break;
     }
   }
+  check_files($handles);
 }
 
 
-function iterate_tests($handles, $recurs) {
+function iterate_tests($handles) {
   $passed = 0; $failed = 0; $failed_list = "";
-  $ret = 0;
 
-  if ($recurs) {
+  if ($handles->recurs) {
     // construct iterator
-    $it = new RecursiveDirectoryIterator($handles->dir);
+    $it = new RecursiveIteratorIterator(
+      new RecursiveDirectoryIterator($handles->dir)
+    );
     // iterate files recursively
-    foreach (new RecursiveIteratorIterator($it) as $file) {
-      $out = "";  // for XML output
-
+    foreach ($it as $file) {
       if ($file->getExtension() == "src") {
-        $filename = realpath($file);
-
-        // EXECUTION
-        $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
-        exec($command, $out, $ret);
-
-        // VALIDATION
-        // check return values
-        if ($ret == get_ret($filename)) {
-          if ($ret != 0) { // test case passed && parsing failed
-            $passed++; continue;
-          } // XML output needs to be checked otherwise
-
-          if (check_output($out, $filename, $handles)) {
-            $passed++;
-          }
-          else { // TODO
-            $failed++;
-            $failed_list .= "$filename\n";
-          }
+        if (run_test($file, $handles)) {
+          $passed++;
         }
-        else  {
+        else {
           $failed++;
-          $failed_list .= "$filename\n";
+          // TODO failed list
         }
       }
     }
@@ -129,39 +120,46 @@ function iterate_tests($handles, $recurs) {
   else {
     // iterate files in specified dir
     foreach (new DirectoryIterator($handles->dir) as $file) {
-      $out = "";  // collects XML output
-
       if ($file->getExtension() == "src") {
-        $filename = $handles->dir . $file->getFilename();
-
-        // EXECUTION
-        $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
-        exec($command, $out, $ret);
-
-        // VALIDATION
-        // check return values
-        if ($ret == get_ret($filename)) {
-          if ($ret != 0) { // test case passed && parsing failed
-            $passed++; continue;
-          } // XML output needs to be checked otherwise
-
-          if (check_output($out, $filename, $handles)) {
-            $passed++;
-          }
-          else { // TODO
-            $failed++;
-            $failed_list .= "$filename\n";
-          }
+        if (run_test($handles->dir . $file, $handles)) {
+          $passed++;
         }
-        else  { // TODO
+        else {
           $failed++;
-          $failed_list .= "$filename\n";
+          // TODO failed list
         }
       }
     }
   }
 
   return array($passed, $failed, $failed_list);
+}
+
+
+function run_test($file, $handles) {
+  $out = "";  // for XML output
+  $ret = 0;   // return value
+
+  $filename = realpath($file);
+
+  // EXECUTION
+  $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
+  exec($command, $out, $ret);
+
+  // VALIDATION
+  // check return values
+  if ($ret == get_ret($filename)) {
+    if ($ret != 0) { // test case passed && parsing failed
+      return true;
+    } // XML output needs to be checked otherwise
+    if (check_output($out, $filename, $handles)) {
+      return true;
+    }
+    else return false;
+  }
+  else {
+    return false;
+  }
 }
 
 
@@ -179,13 +177,14 @@ function check_files($filenames) {
   }
 }
 
+
 // returns expected return value of test case
 // expects [string] filename (.src)
 function get_ret($filename) {
   $filename = str_replace(".src", ".rc", $filename);
   $file = fopen($filename, "r");
   if (!$file) {
-    fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
+    fwrite(STDERR, "INVALID FILE: Expected return value file\n");
     exit(41);
   }
   return fgets($file);
@@ -200,7 +199,7 @@ function check_output($out, $filename, $handles) {
 
   // generate file with output
   if (file_exists("$filename.new")) {
-    fwrite(STDERR, "ERROR: Failed to create file\n");
+    fwrite(STDERR, "ERROR: Failed to create file \"$filename.new\"\n");
     exit(41);
   }
   $file = fopen("$filename.new", "w");
@@ -217,7 +216,7 @@ function check_output($out, $filename, $handles) {
   exec($command, $out, $ret);
 
   // TEAR DOWN
-  exec("rm -f $filename.new $filename.new.log");
+  exec("rm -f $filename.new $filename.log");
 
   return $ret == 0;
 }
@@ -261,6 +260,7 @@ function handle_output($record) {
   </body>
   </html>";
 }
+
 
 function get_perc($val, $total) {
   if ($total == 0) return number_format(0, 2);
