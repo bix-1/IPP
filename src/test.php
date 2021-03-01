@@ -1,14 +1,6 @@
 <?php
 // TODO
 
-// NOTE
-// tests:
-//    iterate:  -- iterate filesys
-//      exec
-//      validate
-//      record:   -- passed / failed + list_of_failed
-//    output:   -- html
-
 
 class Handles {
   public $dir = ".";
@@ -267,11 +259,11 @@ function handle_output($record) {
     </tr>
   </table>
   </body>
-  </html>
-";
+  </html>";
 }
 
 function get_perc($val, $total) {
+  if ($total == 0) return number_format(0, 2);
   return number_format(($val / $total) * 100, 2);
 }
 ?>
