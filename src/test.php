@@ -187,6 +187,7 @@ function get_ret($filename) {
     fwrite(STDERR, "INVALID FILE: Expected return value file\n");
     exit(41);
   }
+  fclose($file);
   return fgets($file);
 }
 
@@ -208,6 +209,7 @@ function check_output($out, $filename, $handles) {
     exit(41);
   }
   fwrite($file, implode("\n", $out));
+  fclose($file);
 
   // compare files using A7Soft JExamXML
   $ret = 0;

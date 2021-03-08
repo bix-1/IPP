@@ -124,6 +124,8 @@ function parse($opts) {
       for ($i = 1; $i < count($set); $i++) {
         fwrite($file, ${$set[$i]}."\n");
       }
+
+      fclose($file);
     }
   }
 
