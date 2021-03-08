@@ -273,7 +273,7 @@ if ($argc > 1) {
     if ($argc == 2) {
       echo "This is Help for module parse.php\n";
       echo " - Run using `php7.4 parse.php {options} <input`\n";
-      echo "Options:\n";
+      echo "\nOptions:\n";
       echo "  --help\t\t\tDisplays this help\n";
       echo "  --stats=file {options}\tPrints statistics to given file\n";
       echo "\t- NOTE: Both --stats & its options are repeatable; files must be unique\n";

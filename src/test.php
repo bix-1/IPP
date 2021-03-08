@@ -1,7 +1,6 @@
 <?php
 // TODO
-//    help
-//    parse + interp only
+//    parse & interp only
 //    .in / .out missing -- create empty
 
 
@@ -18,14 +17,22 @@ class Handles {
   public $interp = true;  //                        interpret
 }
 
+class Outputs {
+  public $passed = 0;
+  public $failed = 0;
+  public $test_list = "";
+  public $passed_list = "";
+  public $failed_list = "";
+}
 
 $handles = new Handles();
+$outputs = new Outputs();
 
 handle_opts($argc, $argv, $handles);
 
-$record = iterate_tests($handles);
+iterate_tests($handles, $outputs);
 
-handle_output($record);
+handle_output($outputs);
 
 
 // handles commandline options
@@ -42,8 +49,16 @@ function handle_opts($argc, $argv, &$handles) {
         else {
           echo "This is Help for module test.php\n";
           echo " - Run using `php7.4 test.php {options} <input`\n";
-          echo "Options:\n";
-          // TODO
+          echo "\nOptions:\n";
+          echo "  --help\t\tDisplays this help\n";
+          echo "  --directory=[path]\tLooks for tests in specified dir; Uses current dir otherwise\n";
+          echo "  --recursive\t\tIterates from specified dir recursively\n";
+          echo "  --parse-script=[file]\tSpecifies parser script; Uses parse.php in current dir othwerise\n";
+          echo "  --int-script=[file]\tSpecifies interpreter script; Uses interpret.php in current dir othwerise\n";
+          echo "  --parse-only\t\tUses only parsing script; Does not combine with `--int-only` nor `--int-script`\n";
+          echo "  --int-only\t\tUses only interpreter script\n\t\t\tDoes not combine with `--parse-only` nor `--parse-script`\n";
+          echo "  --jexamxml=[file]\tSpecifies location of A7Soft JExamXML tool\n\t\t\tUses /pub/courses/ipp/jexamxml/jexamxml.jar otherwise\n";
+          echo "  --jexamcfg=[file]\tSpecifies location of A7Soft JExamXML configuration\n\t\t\tUses /pub/courses/ipp/jexamxml/options otherwise\n\n";
         }
         exit(0);
 
@@ -57,7 +72,6 @@ function handle_opts($argc, $argv, &$handles) {
           exit(10);
         }
         $handles->interp = false;
-        $handles->intr = "";
         break;
 
       case "--int-only":
@@ -66,7 +80,6 @@ function handle_opts($argc, $argv, &$handles) {
           exit(10);
         }
         $handles->parse = false;
-        $handles->parser = "";
         break;
 
       default: // check for opts with parameter
@@ -96,51 +109,61 @@ function handle_opts($argc, $argv, &$handles) {
 }
 
 
-function iterate_tests($handles) {
-  $passed = 0; $failed = 0; $failed_list = "";
-
+function iterate_tests($handles, &$outputs) {
   if ($handles->recurs) {
     // construct iterator
     $it = new RecursiveIteratorIterator(
-      new RecursiveDirectoryIterator($handles->dir)
+      new RecursiveDirectoryIterator($handles->dir, FilesystemIterator::SKIP_DOTS),
+      RecursiveIteratorIterator::SELF_FIRST
     );
     // iterate files recursively
     foreach ($it as $file) {
-      if ($file->getExtension() == "src") {
+      if ($file->isDir()) {
+        $outputs->test_list .= str_repeat("&emsp;", $it->getDepth() * 2) . $file->getFilename() . "/<br>";
+      } elseif ($file->getExtension() == "src") {
+        $outputs->test_list .= str_repeat("&emsp;", $it->getDepth() * 2);
         if (run_test($file, $handles)) {
-          $passed++;
+          $outputs->passed++;
+          $outputs->test_list .= "<span style=\"color: green\">&#9635;</span>";
+          $outputs->passed_list .= "&emsp;" . $file . "<br>";
         }
         else {
-          $failed++;
-          // TODO failed list
+          $outputs->failed++;
+          $outputs->test_list .= "<span style=\"color: red\">&#9635;</span>";
+          $outputs->failed_list .= "&emsp;" . $file . "<br>";
         }
+        $outputs->test_list .= $file->getFilename() . "<br>";
       }
+      continue;
     }
   }
   else {
+    // add main dir to test list
+    $outputs->test_list .= $handles->dir . "<br>";
+
     // iterate files in specified dir
     foreach (new DirectoryIterator($handles->dir) as $file) {
       if ($file->getExtension() == "src") {
-        if (run_test($handles->dir . $file, $handles)) {
-          $passed++;
+        if (run_test($file->getPathname(), $handles)) {
+          $outputs->passed++;
+          $outputs->test_list .= "<span style=\"color: green\">&#9635;</span>";
+          $outputs->passed_list .= "&emsp;" . $file->getPathname() . "<br>";
         }
         else {
-          $failed++;
-          // TODO failed list
+          $outputs->failed++;
+          $outputs->test_list .= "<span style=\"color: red\">&#9635;</span>";
+          $outputs->failed_list .= "&emsp;" . $file->getPathname() . "<br>";
         }
+        $outputs->test_list .= "&emsp;" . $file->getFilename() . "<br>";
       }
     }
   }
-
-  return array($passed, $failed, $failed_list);
 }
 
 
-function run_test($file, $handles) {
+function run_test($filename, $handles) {
   $out = "";  // for XML output
   $ret = 0;   // return value
-
-  $filename = realpath($file);
 
   // EXECUTION
   $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
@@ -184,11 +207,12 @@ function get_ret($filename) {
   $filename = str_replace(".src", ".rc", $filename);
   $file = fopen($filename, "r");
   if (!$file) {
-    fwrite(STDERR, "INVALID FILE: Expected return value file\n");
+    fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
     exit(41);
   }
+  $ret = fgets($file);
   fclose($file);
-  return fgets($file);
+  return $ret;
 }
 
 
@@ -224,10 +248,11 @@ function check_output($out, $filename, $handles) {
 }
 
 
-function handle_output($record) {
-  $passed = $record[0];
-  $failed = $record[1];
+function handle_output($outputs) {
+  $passed = $outputs->passed;
+  $failed = $outputs->failed;
   $total = $passed + $failed;
+
   echo "<!DOCTYPE html>
   <html>
   <head>
@@ -239,6 +264,29 @@ function handle_output($record) {
       table tr#ROW1  {background-color:#7bb6ed}
       table tr#ROW2  {background-color:#ed7b7b}
       table tr#ROW3  {background-color:#7bed7f}
+
+      .collapsible {
+        background-color: #eee;
+        color: #444;
+        cursor: pointer;
+        padding: 18px;
+        width: 100%;
+        border: none;
+        text-align: left;
+        outline: none;
+        font-size: 15px;
+      }
+
+      .active, .collapsible:hover {
+        background-color: #ccc;
+      }
+
+      .content {
+        padding: 0 18px;
+        display: none;
+        overflow: hidden;
+        background-color: #f1f1f1;
+      }
     </style>
   </head>
   <body>
@@ -251,14 +299,42 @@ function handle_output($record) {
     <tr id=\"ROW2\">
       <th style=\"text-align:left\"><b>FAILED</b></th>
       <th style=\"text-align:right\">$failed</th>
-      <th style=\"text-align:right\">". get_perc($failed, $total) ."</th>
+      <th style=\"text-align:right\">". get_perc($outputs->failed, $total) ."</th>
     </tr>
     <tr id=\"ROW3\">
       <th style=\"text-align:left\"><b>PASSED</b></th>
       <th style=\"text-align:right\">$passed</th>
-      <th style=\"text-align:right\">". get_perc($passed, $total) ."</th>
+      <th style=\"text-align:right\">". get_perc($outputs->passed, $total) ."</th>
     </tr>
-  </table>
+  </table><br>
+  <button type=\"button\" class=\"collapsible\">All</button>
+  <div class=\"content\">
+    <p>" . $outputs->test_list . "</p>
+  </div>
+  <button type=\"button\" class=\"collapsible\">Passed</button>
+  <div class=\"content\">
+    <p>" . $outputs->passed_list . "</p>
+  </div>
+  <button type=\"button\" class=\"collapsible\">Failed</button>
+  <div class=\"content\">
+    <p>" . $outputs->failed_list . "</p>
+  </div>
+  <script>
+  var coll = document.getElementsByClassName(\"collapsible\");
+  var i;
+
+  for (i = 0; i < coll.length; i++) {
+    coll[i].addEventListener(\"click\", function() {
+      this.classList.toggle(\"active\");
+      var content = this.nextElementSibling;
+      if (content.style.display === \"block\") {
+        content.style.display = \"none\";
+      } else {
+        content.style.display = \"block\";
+      }
+    });
+  }
+  </script>
   </body>
   </html>";
 }
