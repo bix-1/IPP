@@ -9,7 +9,7 @@ SCRIPTS = parse.php interpret.py test.php
 .PHONY: pack clean
 
 pack:
-	zip $(LOGIN).zip $(SCRIPTS)
+	zip $(LOGIN).zip $(SCRIPTS) rozsireni
 
 clean:
 	rm -f *.zip
