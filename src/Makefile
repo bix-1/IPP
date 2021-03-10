@@ -20,3 +20,4 @@ check:	pack
 
 clean:
 	rm -f *.zip
+	rm -rf testDir/
