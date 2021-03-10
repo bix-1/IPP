@@ -9,7 +9,7 @@ DOC = readme1.pdf readme2.pdf
 .PHONY: pack clean
 
 pack:	clean
-	zip $(LOGIN).zip $(SCRIPTS) $(DOC) rozsireni
+	zip $(LOGIN).zip $(SCRIPTS) rozsireni
 	cd ../doc/ && zip ../src/$(LOGIN).zip $(DOC)
 
 check:	pack
