@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: parse.php
+ * Brief: Implementation of parser
+ *
+ * Project: Interpret for imperative programing language IPPcode21
+ *
+ * Authors: Jakub Bartko    xbartk07@stud.fit.vutbr.cz
+ */
+
 //__________GLOBALS__________
 $output = "";
 // counters for _stats_ opt

@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: test.php
+ * Brief: Testing script
+ *
+ * Project: Interpret for imperative programing language IPPcode21
+ *
+ * Authors: Jakub Bartko    xbartk07@stud.fit.vutbr.cz
+ */
+
+
 // TODO
 //    parse & interp only
 //    .in / .out missing -- create empty
