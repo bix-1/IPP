@@ -11,7 +11,6 @@
 
 // TODO
 //    parse & interp only
-//    .in / .out missing -- create empty
 
 
 class Handles {
@@ -172,6 +171,8 @@ function iterate_tests($handles, &$outputs) {
 
 
 function run_test($filename, $handles) {
+  check_test_files($filename);
+
   $out = "";  // for XML output
   $ret = 0;   // return value
 
@@ -192,6 +193,25 @@ function run_test($filename, $handles) {
   }
   else {
     return false;
+  }
+}
+
+
+function check_test_files($filename) {
+  if (!file_exists($tmp = str_replace(".src", ".in", $filename))) {
+    touch($tmp);
+  }
+  if (!file_exists($tmp = str_replace(".src", ".out", $filename))) {
+    touch($tmp);
+  }
+  if (!file_exists($tmp = str_replace(".src", ".rc", $filename))) {
+    $file = fopen($tmp, "w");
+    if (!$file) {
+      fwrite(STDERR, "ERROR: Failed to create \"$tmp\"\n");
+      exit(41);
+    }
+    fwrite($file, 0);
+    fclose($file);
   }
 }
 
@@ -222,6 +242,7 @@ function get_ret($filename) {
   }
   $ret = fgets($file);
   fclose($file);
+
   return $ret;
 }
 
