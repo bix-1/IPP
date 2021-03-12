@@ -10,7 +10,6 @@
 
 
 // TODO
-// fix interpret command
 
 
 class Handles {
@@ -179,14 +178,14 @@ function run_test($filename, $handles) {
   // EXECUTION
   if ($handles->parse) {
     if ($handles->interp) { // parse && interpret
-      $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null | python3.8 " . $handles->intr;
+      $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null | python3.8 " . $handles->intr . " --input=" . str_replace(".src", ".in", $filename);
     }
     else {                  // parse only
       $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
     }
   }
   else {                    // interpret only
-    $command = "python3.8 " . $handles->intr . " <$filename 2>/dev/null";
+    $command = "python3.8 " . $handles->intr . " --input=" . str_replace(".src", ".in", $filename) . " <$filename 2>/dev/null";
   }
 
   exec($command, $out, $ret);
