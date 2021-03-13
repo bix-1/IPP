@@ -9,15 +9,14 @@
  */
 
 
-// TODO
-
-
+// file handles & global flags
 class Handles {
-  //
   public $dir = ".";              // starting directory
-  public $parser = "parse.php";   //
-  public $intr = "interpret.py";  //
+  public $parser = "parse.php";   // parser script
+  public $intr = "interpret.py";  // interpret script
+  // XML diff tool
   public $xml = "/pub/courses/ipp/jexamxml/jexamxml.jar";
+  // XML diff tool config
   public $cfg = "/pub/courses/ipp/jexamxml/options";
   // flags
   public $recurs = false; // recursive traversal of files
@@ -25,6 +24,7 @@ class Handles {
   public $interp = true;  //                        interpret
 }
 
+// counters & trackers of tests
 class Outputs {
   public $passed = 0;
   public $failed = 0;
@@ -33,19 +33,18 @@ class Outputs {
   public $failed_list = "";
 }
 
+
 $handles = new Handles();
 $outputs = new Outputs();
 
 handle_opts($argc, $argv, $handles);
-
 iterate_tests($handles, $outputs);
-
-handle_output($outputs);
+print_output($outputs);
 
 
 // handles commandline options
-// expects options (as argc & argv);
-// returns specified options as [object] handles & [flag] recurs
+// expects options (as argc & argv) & [object ref] handles
+// returns specified options as [object] handles & flags -- in given reference
 function handle_opts($argc, $argv, &$handles) {
   for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
@@ -117,6 +116,10 @@ function handle_opts($argc, $argv, &$handles) {
 }
 
 
+// iterates specified tests
+//  & generates test filesys trees in HTML format
+// expects [object] file handles & [object ref] output counters & logs
+// returns stats of run tests in given [object ref] outputs trackers
 function iterate_tests($handles, &$outputs) {
   if ($handles->recurs) {
     // construct iterator
@@ -169,6 +172,9 @@ function iterate_tests($handles, &$outputs) {
 }
 
 
+// test execution & validation
+// expects [string] test filename (.src) & [object] file handles
+// returns TRUE if test passed, FALSE otherwise
 function run_test($filename, $handles) {
   check_test_files($filename);
 
@@ -207,6 +213,9 @@ function run_test($filename, $handles) {
 }
 
 
+// checks whether all necessary test files for
+//  given [string] filename are present
+// generates default {.in, .out, .rc} files if missing
 function check_test_files($filename) {
   if (!file_exists($tmp = str_replace(".src", ".in", $filename))) {
     touch($tmp);
@@ -226,7 +235,7 @@ function check_test_files($filename) {
 }
 
 
-// check the validity of given filenames
+// checks the validity of given [object] filenames
 function check_files($filenames) {
   if (
     !is_dir($filenames->dir)
@@ -258,7 +267,7 @@ function get_ret($filename) {
 
 
 // compares generated output with reference file
-// expects [string] output & [string] filename (.src) & file handles
+// expects [string] output & [string] filename (.src) & [object] file handles
 // returns [bool] TRUE if files matched, FALSE otherwise
 function check_output($out, $filename, $handles) {
   $filename = str_replace(".src", ".out", $filename);
@@ -276,20 +285,28 @@ function check_output($out, $filename, $handles) {
   fwrite($file, implode("\n", $out));
   fclose($file);
 
-  // compare files using A7Soft JExamXML
+  // compare files
   $ret = 0;
-  $command = "java -jar " . $handles->xml .
+  if ($handles->interp) { // compare files using unix diff
+    $command = "diff $filename $filename.new >/dev/null";
+    exec($command, $out, $ret);
+  }
+  else {  // compare files using A7Soft JExamXML
+    $command = "java -jar " . $handles->xml .
     " $filename $filename.new /dev/null " . $handles->cfg;
-  exec($command, $out, $ret);
+    exec($command, $out, $ret);
 
-  // TEAR DOWN
-  exec("rm -f $filename.new $filename.log");
+    // TEAR DOWN
+    exec("rm -f $filename.new $filename.log");
+  }
 
   return $ret == 0;
 }
 
 
-function handle_output($outputs) {
+// prints output of testing in HTML format to STDIN
+// expects [object] output handles
+function print_output($outputs) {
   $passed = $outputs->passed;
   $failed = $outputs->failed;
   $total = $passed + $failed;
@@ -381,6 +398,8 @@ function handle_output($outputs) {
 }
 
 
+// returns [float] percentage of given [int] value in [int] total
+//  rounded to 2 decimal places
 function get_perc($val, $total) {
   if ($total == 0) return number_format(0, 2);
   else return number_format(($val / $total) * 100, 2);

@@ -11,15 +11,15 @@
 
 // counters for stats options
 class Counters {
-  public $loc = 0;
-  public $comments = 0;
-  public $labels = 0;
-  public $jumps = 0;
-  public $fwjumps = 0;
-  public $backjumps = 0;
-  public $badjumps = 0;
-  public $label_list = array();
-  public $jmp_list = array();
+  public $loc = 0;              // lines of code
+  public $comments = 0;         // n of comments
+  public $labels = 0;           // n of declared labels
+  public $jumps = 0;            // n of jumps
+  public $fwjumps = 0;          // n of forward jumps
+  public $backjumps = 0;        // n of backward jumps
+  public $badjumps = 0;         // n of faulty jumps (missing label declaration)
+  public $label_list = array(); // declared labels
+  public $jmp_list = array();   // jump destinations
 }
 
 // states of main FSM
