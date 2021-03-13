@@ -209,32 +209,6 @@ function parse(&$counters) {
 }
 
 
-// prints collected stats to specified files
-// expects [associative array {filename, {stats_opts}}] options
-//  & [object] stats counters
-function print_stats($opts, $counters) {
-  // handle bad jumps
-  foreach ($counters->jmp_list as $n) {
-    $counters->badjumps += $n;
-  }
-  // output to files
-  foreach ($opts as $set) {
-    // get file handle
-    $file = fopen($set[0], "w");
-    if (!$file) {
-      fwrite(STDERR, "ERROR: Failed to open file\n");
-      exit(12);
-    }
-    // print stats
-    for ($i = 1; $i < count($set); $i++) {
-      fwrite($file, ${$set[$i]}."\n");
-    }
-
-    fclose($file);
-  }
-}
-
-
 // parsers given instruction & handles stats options
 // expects [array {OPCODE, arguments}] instruction
 //  & [object] stats counters
@@ -369,6 +343,32 @@ function handle_type($arg, $type) {
     default:
       return array("INV");
       break;
+  }
+}
+
+
+// prints collected stats to specified files
+// expects [associative array {filename, {stats_opts}}] options
+//  & [object] stats counters
+function print_stats($opts, $counters) {
+  // handle bad jumps
+  foreach ($counters->jmp_list as $n) {
+    $counters->badjumps += $n;
+  }
+  // output to files
+  foreach ($opts as $set) {
+    // get file handle
+    $file = fopen($set[0], "w");
+    if (!$file) {
+      fwrite(STDERR, "ERROR: Failed to open file\n");
+      exit(12);
+    }
+    // print stats
+    for ($i = 1; $i < count($set); $i++) {
+      fwrite($file, ${$set[$i]}."\n");
+    }
+
+    fclose($file);
   }
 }
 
