@@ -8,17 +8,24 @@
  * Authors: Jakub Bartko    xbartk07@stud.fit.vutbr.cz
  */
 
-//__________GLOBALS__________
-$output = "";
-// counters for _stats_ opt
-$loc = $comments = $labels = $jumps = $fwjumps = $backjumps = $badjumps = 0;
-// trackers _stats_ opt
-$label_list = array();
-$jmp_list = array();
 
+// counters for stats options
+class Counters {
+  public $loc = 0;
+  public $comments = 0;
+  public $labels = 0;
+  public $jumps = 0;
+  public $fwjumps = 0;
+  public $backjumps = 0;
+  public $badjumps = 0;
+  public $label_list = array();
+  public $jmp_list = array();
+}
+
+// states of main FSM
 abstract class State {
   const Start = 0;
-  const Command = 1;
+  const Instr = 1;
 }
 
 // list of all viable operation codes
@@ -62,15 +69,102 @@ $opcodes = array(
 );
 
 
-function parse($opts) {
-  global $loc, $comments, $labels, $jumps, $fwjumps, $backjumps, $badjumps;
-  global $output;
+$counters = new Counters();
 
+$opts = handle_opts($argc, $argv);
+$output = parse($counters);
+echo $output;
+print_stats($opts, $counters);
+
+exit(0);
+
+
+// handles command line options
+// expects [int] number of & [array] list of options
+// returns [associative array] of statp options -- [filename]: {options}
+function handle_opts($argc, $argv) {
+  // array of statp options
+  $opts = array();
+
+  if ($argc > 1) {
+    if (!strcmp($argv[1], "--help")) {
+      if ($argc == 2) {
+        echo "This is Help for module parse.php\n";
+        echo " - Run using `php7.4 parse.php {options} <input`\n";
+        echo "\nOptions:\n";
+        echo "  --help\t\t\tDisplays this help\n";
+        echo "  --stats=file {options}\tPrints statistics to given file\n";
+        echo "\t- NOTE: Both --stats & its options are repeatable; files must be unique\n";
+        echo "\tViable options: [Number of ...]\n";
+        echo "\t--loc\t\t\tLines of code\n";
+        echo "\t--comments\t\tLines with comments\n";
+        echo "\t--labels\t\tDefined labels\n";
+        echo "\t--jumps\t\t\tJump instructions\n";
+        echo "\t--fwjumps\t\tForward jumps\n";
+        echo "\t--backjumps\t\tBackward jumps\n";
+        echo "\t--badjumps\t\tInvalid jumps\n";
+        echo "\n";
+        exit(0);
+      }
+      else {
+        fwrite(STDERR, "ERROR: Invalid Options\n");
+        exit(10);
+      }
+    }
+    else if (preg_match("/^--stats=/", $argv[1])) {
+      // iterate over opts
+      for ($i = 1; $i < $argc; $i++) {
+        // check for new file opt
+        if (preg_match("/^--stats=/", $argv[$i])) {
+          if (preg_match("/^--stats=\s*$/", $argv[$i])) {
+            fwrite(STDERR, "ERROR: Invalid Options\n");
+            exit(10);
+          }
+
+          // check whether filename unique
+          $filename = str_replace("--stats=", "", $argv[$i]);
+          if (in_array($filename, array_column($opts, 0))) {
+            fwrite(STDERR, "ERROR: --stats files must by unique\n");
+            exit(12);
+          }
+
+          // add new stats set
+          array_push($opts, array($filename));
+        }
+        else { // check for --stats opts
+          if (preg_match("/^\-\-(loc|comments|labels|jumps|fwjumps|backjumps|badjumps)/", $argv[$i])) {
+            array_push(
+              $opts[count($opts)-1],
+              str_replace("--", "", $argv[$i])
+            );
+          }
+          else {
+            fwrite(STDERR, "ERROR: Invalid Options\n");
+            exit(10);
+          }
+        }
+      } // end interation
+    } // end opt parsing
+    else {
+      fwrite(STDERR, "ERROR: Invalid Options\n");
+      exit(10);
+    }
+  }
+  return $opts;
+}
+
+
+// main function -- parses source code in IPPcode21 from STDIN
+//  & handles collection of statistics about source code
+// expects [object] stats counters
+// returns [string] parsed code in XML format
+function parse(&$counters) {
+  $output = ""; // generating parsing output in XML format
   $output .= "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
   $output .= "<program language=\"IPPcode21\">\n";
   $state = State::Start;
 
-  while (true) {
+  while (true) {  // main FSM
     // handle EOF
     if (feof(STDIN)) {
       if ($state == State::Start) {
@@ -85,14 +179,14 @@ function parse($opts) {
     // remove comments
     $n = 0;
     $line = preg_replace("/#.*/", "", $line, -1, $n);
-    if ($n != 0) $comments++;
+    if ($n != 0) $counters->comments++;
     // skip empty line
     if (preg_match("/^\s*$/", $line)) continue;
 
-    // HEADER
+    // parse HEADER
     if ($state == State::Start) {
       if (preg_match("/^\s*\.IPPcode21\s*$/i", "$line")) {
-        $state = State::Command;
+        $state = State::Instr;
         continue;
       }
       else {
@@ -100,50 +194,56 @@ function parse($opts) {
         exit(21);
       }
     }
-    // COMMANDS
-    else if ($state == State::Command) {
-      $loc++;
+    // parse INSTRUCTION
+    else if ($state == State::Instr) {
+      $counters->loc++;
       // split into words & remove empty elements
       $instr = array_filter(preg_split("/\s+/", ltrim($line)));
       // parse instruction
-      handle_instr($instr);
+      $output .= handle_instr($instr, $counters);
     }
   }
 
-  // print output in XML to STDIN
   $output .= "</program>\n";
-  echo $output;
-
-  //    handle _stats_ opts
-  // handle bad jumps
-  global $jmp_list;
-  foreach ($jmp_list as $n) {
-    $badjumps += $n;
-  }
-  // output to files
-  if (count($opts) > 0) {
-    foreach ($opts as $set) {
-      // get file handle
-      $file = fopen($set[0], "w");
-      if (!$file) {
-        fwrite(STDERR, "ERROR: Failed to open file\n");
-        exit(12);
-      }
-
-      for ($i = 1; $i < count($set); $i++) {
-        fwrite($file, ${$set[$i]}."\n");
-      }
-
-      fclose($file);
-    }
-  }
-
+  return $output;
 }
 
-function handle_instr($instr) {
-  global $output, $opcodes;
+
+// prints collected stats to specified files
+// expects [associative array {filename, {stats_opts}}] options
+//  & [object] stats counters
+function print_stats($opts, $counters) {
+  // handle bad jumps
+  foreach ($counters->jmp_list as $n) {
+    $counters->badjumps += $n;
+  }
+  // output to files
+  foreach ($opts as $set) {
+    // get file handle
+    $file = fopen($set[0], "w");
+    if (!$file) {
+      fwrite(STDERR, "ERROR: Failed to open file\n");
+      exit(12);
+    }
+    // print stats
+    for ($i = 1; $i < count($set); $i++) {
+      fwrite($file, ${$set[$i]}."\n");
+    }
+
+    fclose($file);
+  }
+}
+
+
+// parsers given instruction & handles stats options
+// expects [array {OPCODE, arguments}] instruction
+//  & [object] stats counters
+// returns [string] parsed instruction in XML format
+function handle_instr($instr, &$counters) {
+  global $opcodes;
   static $cnt = 0;
   $cnt++;
+  $output = "";
   $opcode = $instr[0] = strtoupper($instr[0]);
 
   // check validity of OPCODE
@@ -152,49 +252,53 @@ function handle_instr($instr) {
     exit(22);
   }
 
-  // handle counters & trackers for _stats_ opt
+  // handle counters for statp opts
   switch ($opcode) {
     case "LABEL":
-      global $labels, $label_list, $jmp_list, $fwjumps;
       $label = $instr[1];
-      $labels++;
-      array_push($label_list, $label);
-      if ($key = array_search($label, $jmp_list)) {
-        $fwjumps++;
-        unset($jmp_list[$key]);
+      $counters->labels++;
+      array_push($counters->label_list, $label);
+      if ($key = array_search($label, $counters->jmp_list)) {
+        $counters->fwjumps++;
+        unset($counters->jmp_list[$key]);
       }
       break;
 
     case "JUMP": case "JUMPIFEQ": case "JUMPIFNEQ": case "CALL":
-      global $label_list, $jmp_list;
       $label = $instr[1];
-      if (in_array($label, $label_list)) {
-        global $backjumps; $backjumps++;
-        unset($jmp_list[$label]);
+      if (in_array($label, $counters->label_list)) {
+        $counters->backjumps++;
+        unset($counters->jmp_list[$label]);
       }
       else {
-        if ($key = array_search($label, $jmp_list)) {
-          $jmp_list[$label]++;
+        if ($key = array_search($label, $counters->jmp_list)) {
+          $counters->jmp_list[$label]++;
         }
         else {
-          $jmp_list[$label] = 1;
+          $counters->jmp_list[$label] = 1;
         }
       }
     case "RETURN":
-      global $jumps; $jumps++;
+      $counters->jumps++;
       break;
   }
 
   $output .= "\t<instruction order=\"$cnt\" opcode=\"$opcode\">\n";
-  handle_args($instr);
+  $output .= handle_args($instr);
   $output .= "\t</instruction>\n";
+
+  return $output;
 }
 
+
+// handles arguments of given instruction
+// expects [array {OPCODE, arguments}] instruction
+// returns [string] parsed arguments in XML format
 function handle_args($instr) {
-  global $output, $opcodes;
+  global $opcodes;
+  $output = "";
   $types = $opcodes[$instr[0]];
-  $n = count($instr)-1;
-  $N = count($types);
+  $n = count($instr)-1; // number of given args
 
   // match number of args
   if ($n != count($types)) {
@@ -210,11 +314,14 @@ function handle_args($instr) {
     }
     $output .= "\t\t<arg".($i+1)." type=\"$arg[0]\">$arg[1]</arg".($i+1).">\n";
   }
+
+  return $output;
 }
 
-// checks whether type of given arg & defined type match
+
+// checks whether type of given arg matches defined type
 // returns arg as array of [_type_, _value_] if types match
-// else error
+// else throws error
 function handle_type($arg, $type) {
   switch ($type) {
     case "var":
@@ -265,6 +372,10 @@ function handle_type($arg, $type) {
   }
 }
 
+
+// replaces problematic chars (for XML) with corresponding XML entities
+// expects [string] input
+// returns [string] corrected input
 function correct_string($str) {
   $str = str_replace("\"", "&quot;", $str);
   $str = str_replace("&", "&amp;", $str);
@@ -273,76 +384,4 @@ function correct_string($str) {
   $str = str_replace(">", "&gt;", $str);
   return $str;
 }
-
-
-// OPTION HANDLING
-$opts = array();
-if ($argc > 1) {
-  if (!strcmp($argv[1], "--help")) {
-    if ($argc == 2) {
-      echo "This is Help for module parse.php\n";
-      echo " - Run using `php7.4 parse.php {options} <input`\n";
-      echo "\nOptions:\n";
-      echo "  --help\t\t\tDisplays this help\n";
-      echo "  --stats=file {options}\tPrints statistics to given file\n";
-      echo "\t- NOTE: Both --stats & its options are repeatable; files must be unique\n";
-      echo "\tViable options: [Number of ...]\n";
-      echo "\t--loc\t\t\tLines of code\n";
-      echo "\t--comments\t\tLines with comments\n";
-      echo "\t--labels\t\tDefined labels\n";
-      echo "\t--jumps\t\t\tJump instructions\n";
-      echo "\t--fwjumps\t\tForward jumps\n";
-      echo "\t--backjumps\t\tBackward jumps\n";
-      echo "\t--badjumps\t\tInvalid jumps\n";
-      echo "\n";
-      exit(0);
-    }
-    else {
-      fwrite(STDERR, "ERROR: Invalid Options\n");
-      exit(10);
-    }
-  }
-  else if (preg_match("/^--stats=/", $argv[1])) {
-    // iterate over opts
-    for ($i = 1; $i < $argc; $i++) {
-      // check for new file opt
-      if (preg_match("/^--stats=/", $argv[$i])) {
-        if (preg_match("/^--stats=\s*$/", $argv[$i])) {
-          fwrite(STDERR, "ERROR: Invalid Options\n");
-          exit(10);
-        }
-
-        $filename = str_replace("--stats=", "", $argv[$i]);
-        // check whether filename unique
-        if (in_array($filename, array_column($opts, 0))) {
-          fwrite(STDERR, "ERROR: --stats files must by unique\n");
-          exit(12);
-        }
-
-        // add new stats set
-        array_push($opts, array($filename));
-      }
-      else { // check for --stats opts
-        if (preg_match("/^\-\-(loc|comments|labels|jumps|fwjumps|backjumps|badjumps)/", $argv[$i])) {
-          array_push(
-            $opts[count($opts)-1],
-            str_replace("--", "", $argv[$i])
-          );
-        }
-        else {
-          fwrite(STDERR, "ERROR: Invalid Options\n");
-          exit(10);
-        }
-      }
-    } // end interation
-  } // end opt parsing
-  else {
-    fwrite(STDERR, "ERROR: Invalid Options\n");
-    exit(10);
-  }
-}
-
-# PARSING
-parse($opts);
-exit(0);
 ?>
