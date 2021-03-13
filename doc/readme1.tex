@@ -1,0 +1,37 @@
+\documentclass[a4paper, 10pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[left=1.8cm, top=1.8cm, total={18cm, 25cm}]{geometry}
+\usepackage[unicode]{hyperref}
+\usepackage[slovak]{babel}
+
+\title{Implementačná dokumentácia k 1. úlohe do IPP 2020/2021}
+\author{Meno a priezvisko: Jakub Bartko \\ Login: xbartk07}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Štruktúra kódu}
+Činnosť skriptu \texttt{parser.php} je možné rozdeliť na spracovanie argumentov príkazového riadka, načítavanie zdrojového kódu, lexikálnu a syntaktickú analýzu inštrukcií, generovanie výstupu vo formáte XML a zbieranie štatistík o zdrojovom kóde. Hlavné súčasti týchto činností sú rozdelené na niekoľko hlavných funkcií, ktoré ďalej využívajú pomocné obslužné funkcie a štruktúry.
+
+Medzi tieto štruktúry patria:
+\begin{itemize}
+\item trieda \texttt{State} --- jednoduchý zoznam stavov konečného automatu, ktorým je parser riadený
+\item trieda \texttt{Counters} --- počítadlá riadkov kódu, komentárov, \dots a pomocné zoznamy návestí; slúžiace na zber štatistík pre rozšírenie \textsc{STATP}
+\item asociatívne pole \texttt{opcodes} --- zoznam platných inštrukcií zdrojového kódu a typov ich argumentov (\texttt{variable}, \texttt{symbol} alebo \texttt{label})
+\item asociatívne pole \texttt{opts} --- zoznam zadaných súborov štatistík a príslušných cieľových súborov
+\end{itemize}
+Okrem toho je výstup vo formáte XML zbieraný v premennej \texttt{[string] outputs} v rôznych bodoch parsovania.
+
+\section{Činnosť parsera}
+\textbf{Argumenty príkazového riadka} sú spracované iterovaním, kontrolou správnosti s využitím regulárnych výrazov a generovaním asociatívneho poľa \texttt{opts} pre príslušné súbory štatistík.
+
+\textbf{Parsovanie zdrojového kódu} je v základe štruktúrované ako primitívny konečný automat. V každom svojom cykle načíta jeden riadok zo štandardného vstupu, odstráni z neho komentáre a riadok preskočí, ak obsahuje výhradne biele znaky. Ako prvý neprázdny riadok musí spracovať hlavičku zdrojového kódu; ďalej spracováva inštrukcie a ich argumenty.
+
+\textbf{Spracovanie inštrukcie} pozostáva z kontroly jej operačného kódu a kontroly počtu a typu jej argumentov podľa referenčného asociatívneho poľa \texttt{opcodes}, a generovania XML elementu \texttt{instruction}. Obidve z uvedených kontrol sú vykonané s využitím regulárnych výrazov na základe definovaného typu: \texttt{variable}, \texttt{symbol} alebo \texttt{label}. Pri type \texttt{variable} sa skontroluje platnosť označenia rámca a formát identifikátora; pri type \texttt{symbol} sa skontroluje možnosť uvedenia premennej (kontrola identická s typom \texttt{variable}) a uvedenia konštanty, pri ktorej sa skontroluje jej špecifikovaný typ a platnosť príslušnej hodnoty. Okrem toho sa v reťazci, ktorý predstavuje argument inštrukcie, nahradia problémové znaky (pre formát XML) za zodpovedajúce XML entity.
+
+\section{Rozšírenie \textsc{STATP}}
+Štatistiky o zdrojovom kóde sú zbierané na príslušných miestach v skripte --- napr. počet riadkov kódu pri prečítaní nového neprázdneho riadku zdrojového kódu zo štandardného vstupu, alebo počet definovaných návestí pri parsovaní inštrukcie s operačným kódom \texttt{LABEL}. Dodatočné spracovanie si však vyžaduje vyhodnotenie počtu rôznych typov skokov (skokov dopredu, dozadu, alebo neplatných skokov). Toto vyhodnotenie je zabezpečené udržiavaním \textit{zoznamu definovaných návestí} a \textit{zoznamu destinácií skokov}. Pri inštrukcií s operačným kódom \texttt{LABEL} sa definované návestie uloží do prvého z týchto zoznamov a v prípade, že sa vyskytuje v zozname druhom, pripočíta sa ako \textit{skok dopredu}. Analogicky sa destinácia skoku pripočíta ako \textit{skok dozadu}, ak pri inštrukcií podmieneného alebo nepodmieného skoku špecifikované návestie už nachádza v zozname definovaných návestí. Nájdené cieľové návestia sa z príslušného zoznamu odstránia a tie, ktoré v ňom zostanú po prejdení celým zdrojovým programom sú považované za \texttt{bad jumps}. Na záver parsovania je zoznam \texttt{opts} iterovaný a špecifikované súbory štatistík sú zapísané do príslušných súborov.
+\end{document}
