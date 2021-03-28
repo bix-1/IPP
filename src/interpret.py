@@ -1,3 +1,5 @@
+#!/usr/bin/env python3.8
+
 # File: interpret.py
 # Brief: Implementation of interpret
 #
@@ -21,47 +23,57 @@ def error(msg, code):
     sys.exit(code)
 
 
+def get_args():
+    # define CL arguments
+    aparser = argparse.ArgumentParser(description="Interpret XML representation of IPPcode21 & generate outputs.")
+    aparser.add_argument(
+        "-s",
+        "--source",
+        required = False,
+        default = "",
+        help="specify source for XML representation of IPPcode21")
+    aparser.add_argument(
+        "-i",
+        "--input",
+        required = False,
+        default = "",
+        help="specify source for inputs of interpreted code")
+
+    # parse CL arguments
+    args = aparser.parse_args()
+    if not (args.source or args.input):
+        error("At least one of --source, --input needs to be specified", 11)
+    if not args.source:
+        args.source = sys.stdin
+    if not args.input:
+        args.input = sys.stdin
+
+    return args.source, args.input
 
 
-# handle command line arguments
-aparser = argparse.ArgumentParser(description="Interpret XML input.")
-aparser.add_argument(
-    "--source",
-    required = False,
-    default = "",
-    help="input file with XML representation of IPPcode21")
-aparser.add_argument(
-    "--input",
-    required = False,
-    default = "",
-    help="input file with XML representation of IPPcode21")
+def main():
+    src, input = get_args()
 
-args = aparser.parse_args()
+    # get source code in XML tree
+    try:
+        root = ET.parse(src).getroot()
+    except ET.ParseError:
+        error("XML input is not well-formed", 31)
 
-if not (args.source or args.input):
-    error("At least one of --source, --input needs to be specified", 11)
+    # validate root
+    if (    root.tag != "program"
+        or  "language" not in root.attrib
+        or  root.attrib["language"].lower() != "ippcode21"
+        or  not all(a in {"language", "name", "description"} for a in root.attrib)
+       ):
+        error("Invalid root element", 32)
 
-# get source stream
-if args.source:
-    src = open(args.source, "r")
-else:
-    src = sys.stdin
-# get input stream
-if args.input:
-    input = open(args.input, "r")
-else:
-    input = sys.stdin
+    # sort instructions by [attribute] order
+    root[:] = sorted(root, key=lambda x: x.attrib["order"])
+
+    for child in root.iter():
+        print(child.tag, child.attrib)
 
 
-tree = ET.parse(src)
-root = tree.getroot()
-for child in root.iter():
-    print(child.tag, child.attrib)
-
-
-
-# teardown
-if src is not sys.stdin:
-    src.close()
-if input is not sys.stdin:
-    input.close()
+if __name__ == "__main__":
+    main()
