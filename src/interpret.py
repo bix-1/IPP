@@ -81,9 +81,9 @@ class Interp:
     #   where functions are:
     #       interpret_function, check_arg1, check_arg2, check_arg3
     instrs = {
-        "MOVE": [move_, var_, symb_],
+        "MOVE": (move_, var_, symb_),
 
-        "DEFVAR": [defvar_, var_]
+        "DEFVAR": (defvar_, var_)
     }
 
     def run(self, instr):
