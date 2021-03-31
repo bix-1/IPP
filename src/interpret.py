@@ -32,7 +32,7 @@ class Var:
 
     def set(self, type, value):
         # TODO del??
-        if (type != self.type):
+        if self.type != Type.UNDEF and type != self.type:
             error("Incompatible variable types", 52)
         self.type = type
         self.val = value
@@ -97,14 +97,23 @@ class Interp:
     def label():
         pass
 
-    def move_(self, instr):
+    def MOVE(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         if self.is_unique(frame, name):
             error("Variable \"" + name + "\" undefined", 52)
         type, val = self.symb(self.get_arg(instr, 2))
         self.frames[frame][name].set(type, val)
 
-    def defvar_(self, instr):
+    def CREATEFRAME:
+		pass
+
+    def PUSHFRAME:
+		pass
+
+    def POPFRAME:
+		pass
+
+    def DEFVAR(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         if not self.is_unique(frame, name):
             error("Variable already defined", 52)
@@ -116,13 +125,113 @@ class Interp:
             except:
                 error("Missing Local Frame", 55)
 
+    def CALL:
+		pass
+
+    def RETURN:
+		pass
+
+    def PUSHS:
+		pass
+
+    def POPS:
+		pass
+
+    def ADD:
+		pass
+
+    def SUB:
+		pass
+
+    def MUL:
+		pass
+
+    def IDIV:
+		pass
+
+    def LT:
+		pass
+
+    def GT:
+		pass
+
+    def EQ:
+		pass
+
+    def AND:
+		pass
+
+    def OR:
+		pass
+
+    def NOT:
+		pass
+
+    def INT2CHAR:
+		pass
+
+    def STRI2INT:
+		pass
+
+    def READ:
+		pass
+
+    def WRITE:
+		pass
+
+    def CONCAT:
+		pass
+
+    def STRLEN:
+		pass
+
+    def GETCHAR:
+		pass
+
+    def SETCHAR:
+		pass
+
+    def TYPE:
+		pass
+
+    def LABEL:
+		pass
+
+    def JUMP:
+		pass
+
+    def JUMPIFEQ:
+		pass
+
+    def JUMPIFNEQ:
+		pass
+
+    def EXIT:
+		pass
+
+    def DPRINT:
+		pass
+
+    def BREAK:
+        pass
+
 
     # list of valid instructions in format:
     #   "OPCODE" : [run_func, "arg1", "arg2", "arg3"]
     instrs = {
-        "MOVE": (move_, "var", "symb"),
-
-        "DEFVAR": (defvar_, "var")
+        "MOVE": (MOVE, 2),
+        "CREATEFRAME": (CREATEFRAME, 0), "PUSHFRAME": (PUSHFRAME, 0),
+        "POPFRAME": (POPFRAME, 0), "DEFVAR": (DEFVAR, 1),
+        "CALL": (CALL, 1), "RETURN": (RETURN, 0), "PUSHS": (PUSHS, 1),
+        "POPS": (POPS, 1), "ADD": (ADD, 3), "SUB": (SUB, 3),
+        "MUL": (MUL, 3), "IDIV": (IDIV, 3), "LT": (LT, 3), "GT": (GT, 3),
+        "EQ": (EQ, 3),"AND": (AND, 3), "OR": (OR, 3), "NOT": (NOT, 2),
+        "INT2CHAR": (INT2CHAR, 2), "STRI2INT": (STRI2INT, 3),
+        "READ": (READ, 2), "WRITE": (WRITE, 1), "CONCAT": (CONCAT, 3),
+        "STRLEN": (STRLEN, 2), "GETCHAR": (GETCHAR, 3),
+        "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (LABEL, 1),
+        "JUMP": (JUMP, 1), "JUMPIFEQ": (JUMPIFEQ, 3), "JUMPIFNEQ": (JUMPIFNEQ, 3),
+        "EXIT": (EXIT, 1), "DPRINT": (DPRINT, 1), "BREAK": (BREAK, 0)
     }
 
     def run(self, instr):
@@ -141,7 +250,7 @@ class Interp:
             error("Invalid opcode \"" + opcode + "\"", 32)
 
         # validate ammount of args
-        if len(instr) != len(self.instrs[opcode])-1:
+        if len(instr) != self.instrs[opcode][1]:
             error("Invalid number of arguments for \"" + opcode + "\"", 32)
         # validate format of args
         if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
@@ -149,7 +258,6 @@ class Interp:
             or  any(not arg.attrib or attr != "type" for arg in instr for attr in arg.attrib)
             ):
             error("Invalid instruction argument", 32)
-
 
 
 def get_args():
