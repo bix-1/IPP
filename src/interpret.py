@@ -18,7 +18,6 @@ import xml.etree.ElementTree as ET
 from enum import Enum
 import re
 
-
 def error(msg, code):
     print("ERROR: " + msg, file=sys.stderr)
     sys.exit(code)
@@ -32,7 +31,9 @@ class Var:
         self.val = Type.UNDEF
 
     def set(self, type, value):
-        # TODO check type
+        # TODO del??
+        if (type != self.type):
+            error("Incompatible variable types", 52)
         self.type = type
         self.val = value
 
@@ -66,9 +67,32 @@ class Interp:
 
         return frame, name
 
-    def symb():
+    def symb(self, s):
         """check for constant and variable & return value"""
-        pass
+        type = s.attrib["type"]
+        if type == "var":
+            frame, name = self.var(s)
+            if self.is_unique(frame, name):
+                error("Variable \"" + name + "\" undefined", 52)
+            var = self.frames[frame][name]
+            return var.type, var.val
+        elif type == "nil":
+            if s.text == "nil":
+                return Type.NIL, s.text
+        elif type == "bool":
+            if s.text == "true":
+                return Type.BOOL, True
+            elif s.text == "false":
+                return Type.BOOL, False
+        elif type == "int":
+            try:
+                return Type.INT, int(s.text)
+            except:
+                error("Invalid integer value", 32)
+        elif type == "string":
+            return Type.STRING, re.sub(r"\\(\d{3})", lambda x: chr(int(x.group(1))), s.text)
+
+        error("Invalid constant value", 32)
 
     def label():
         pass
@@ -77,7 +101,8 @@ class Interp:
         frame, name = self.var(self.get_arg(instr, 1))
         if self.is_unique(frame, name):
             error("Variable \"" + name + "\" undefined", 52)
-        # self.frames[frame][name].set()
+        type, val = self.symb(self.get_arg(instr, 2))
+        self.frames[frame][name].set(type, val)
 
     def defvar_(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
@@ -89,7 +114,7 @@ class Interp:
             try:
                 self.frames[frame][-1][name] = Var()
             except:
-                error("Missing Local Frame", 52)
+                error("Missing Local Frame", 55)
 
 
     # list of valid instructions in format:
