@@ -191,7 +191,7 @@ function run_test($filename, $handles) {
     }
   }
   else {                    // interpret only
-    $command = "python3.8 " . $handles->intr . " --input=" . str_replace(".src", ".in", $filename) . " <$filename 2>/dev/null";
+    $command = "python3.8 " . $handles->intr . " --source=" . $filename . " --input=" . str_replace(".src", ".in", $filename) . " 2>/dev/null";
   }
 
   exec($command, $out, $ret);
