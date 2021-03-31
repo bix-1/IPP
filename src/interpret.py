@@ -23,6 +23,16 @@ def error(msg, code):
     sys.exit(code)
 
 
+class Err(Enum):
+    WellFormed = 31
+    UnexStruct = 32
+    Semantics = 52
+    Operands = 53
+    UndefVar = 54
+    UndefFrame = 55
+    UndefVal = 56
+    InvVal = 57
+    Str = 58
 Type = Enum("Type", "UNDEF INT BOOL STRING NIL")
 
 class Var:
@@ -32,8 +42,10 @@ class Var:
 
     def set(self, type, value):
         # TODO del??
-        if self.type != Type.UNDEF and type != self.type:
-            error("Incompatible variable types", 52)
+        if self.type != Type.UNDEF and type != Type.UNDEF and type != self.type:
+            error("Incompatible variable types", Err.Semantics.value)
+        if type == Type.UNDEF and self.type != Type.UNDEF:
+            pass
         self.type = type
         self.val = value
 
@@ -55,15 +67,15 @@ class Interp:
 
     def var(self, v):
         if v.attrib["type"] != "var":
-            error("Invalid type -- Expected \"var\"", 32);
+            error("Invalid type -- Expected \"var\"", Err.UnexStruct.value);
         try:
             frame, name = v.text.split("@")
             if (not re.match(r"^[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$", name)):
                 raise Exception()
         except:
-            error("Invalid variable name", 32)
+            error("Invalid variable name", Err.UnexStruct.value)
         if frame not in {"GF", "LF", "TF"}:
-            error("Invalid frame", 32);
+            error("Invalid frame", Err.UnexStruct.value)
 
         return frame, name
 
@@ -73,7 +85,7 @@ class Interp:
         if type == "var":
             frame, name = self.var(s)
             if self.is_unique(frame, name):
-                error("Variable \"" + name + "\" undefined", 52)
+                error("Variable \"" + name + "\" undefined", Err.UndefVar.value)
             var = self.frames[frame][name]
             return var.type, var.val
         elif type == "nil":
@@ -88,131 +100,153 @@ class Interp:
             try:
                 return Type.INT, int(s.text)
             except:
-                error("Invalid integer value", 32)
+                error("Invalid integer value", Err.UnexStruct.value)
         elif type == "string":
             return Type.STRING, re.sub(r"\\(\d{3})", lambda x: chr(int(x.group(1))), s.text)
 
-        error("Invalid constant value", 32)
+        error("Invalid constant value", Err.UnexStruct.value)
 
-    def label():
+    def label(self, instr):
         pass
 
     def MOVE(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         if self.is_unique(frame, name):
-            error("Variable \"" + name + "\" undefined", 52)
+            error("Variable \"" + name + "\" undefined", Err.UndefVar.value)
         type, val = self.symb(self.get_arg(instr, 2))
         self.frames[frame][name].set(type, val)
 
-    def CREATEFRAME:
-		pass
+    def CREATEFRAME(self, instr):
+        pass
 
-    def PUSHFRAME:
-		pass
+    def PUSHFRAME(self, instr):
+        pass
 
-    def POPFRAME:
-		pass
+    def POPFRAME(self, instr):
+        pass
 
     def DEFVAR(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         if not self.is_unique(frame, name):
-            error("Variable already defined", 52)
+            error("Variable already defined", Err.Semantics.value)
         if frame == "GF" or frame == "TF":
             self.frames[frame][name] = Var()
         else:
             try:
                 self.frames[frame][-1][name] = Var()
             except:
-                error("Missing Local Frame", 55)
+                error("Missing Local Frame", Err.UndefVar.value)
 
-    def CALL:
-		pass
+    def CALL(self, instr):
+        pass
 
-    def RETURN:
-		pass
+    def RETURN(self, instr):
+        pass
 
-    def PUSHS:
-		pass
+    def PUSHS(self, instr):
+        pass
 
-    def POPS:
-		pass
+    def POPS(self, instr):
+        pass
 
-    def ADD:
-		pass
+    def arithm(self, instr, op):
+        type1, val1 = self.symb(self.get_arg(instr, 2))
+        type2, val2 = self.symb(self.get_arg(instr, 3))
+        if type1 not in {Type.INT, Type.UNDEF} or type2 not in {Type.INT, Type.UNDEF}:
+            error("Both operands must be \"INT\"", Err.Operands.value)
+        frame, name = self.var(self.get_arg(instr, 1))
+        if self.is_unique(frame, name):
+            error("Undefined variable", Err.UndefVar.value)
+        val = {
+            "ADD":  lambda x,y: x + y,
+            "SUB":  lambda x,y: x - y,
+            "MUL":  lambda x,y: x * y,
+            "IDIV": lambda x,y: x // y
+        }[op](val1, val2)
+        if frame == "LF":
+            try:
+                self.frames[frame][-1][name].set(Type.INT, val)
+            except:
+                error("Missing Local Frame", Err.UndefFrame.value)
+        else:
+            self.frames[frame][name].set(Type.INT, val)
 
-    def SUB:
-		pass
+    def ADD(self, instr):
+        self.arithm(instr, "ADD")
 
-    def MUL:
-		pass
+    def SUB(self, instr):
+        self.arithm(instr, "SUB")
 
-    def IDIV:
-		pass
+    def MUL(self, instr):
+        self.arithm(instr, "MUL")
 
-    def LT:
-		pass
+    def IDIV(self, instr):
+        self.arithm(instr, "IDIV")
 
-    def GT:
-		pass
+    def LT(self, instr):
+        pass
 
-    def EQ:
-		pass
+    def GT(self, instr):
+        pass
 
-    def AND:
-		pass
+    def EQ(self, instr):
+        pass
 
-    def OR:
-		pass
+    def AND(self, instr):
+        pass
 
-    def NOT:
-		pass
+    def OR(self, instr):
+        pass
 
-    def INT2CHAR:
-		pass
+    def NOT(self, instr):
+        pass
 
-    def STRI2INT:
-		pass
+    def INT2CHAR(self, instr):
+        pass
 
-    def READ:
-		pass
+    def STRI2INT(self, instr):
+        pass
 
-    def WRITE:
-		pass
+    def READ(self, instr):
+        pass
 
-    def CONCAT:
-		pass
+    def WRITE(self, instr):
+        pass
 
-    def STRLEN:
-		pass
+    def CONCAT(self, instr):
+        pass
 
-    def GETCHAR:
-		pass
+    def STRLEN(self, instr):
+        pass
 
-    def SETCHAR:
-		pass
+    def GETCHAR(self, instr):
+        pass
 
-    def TYPE:
-		pass
+    def SETCHAR(self, instr):
+        pass
 
-    def LABEL:
-		pass
+    def TYPE(self, instr):
+        pass
 
-    def JUMP:
-		pass
+    def LABEL(self, instr):
+        pass
 
-    def JUMPIFEQ:
-		pass
+    def JUMP(self, instr):
+        pass
 
-    def JUMPIFNEQ:
-		pass
+    def JUMPIFEQ(self, instr):
+        pass
 
-    def EXIT:
-		pass
+    def JUMPIFNEQ(self, instr):
+        pass
 
-    def DPRINT:
-		pass
+    def EXIT(self, instr):
+        pass
 
-    def BREAK:
+    def DPRINT(self, instr):
+        pass
+
+    def BREAK(self, instr):
         pass
 
 
@@ -243,21 +277,21 @@ class Interp:
         if (    len(instr.attrib) != 2
             or  any(a not in {"order", "opcode"} for a in instr.attrib)
             ):
-            error("Invalid attributes", 32)
+            error("Invalid attributes", Err.UnexStruct.value)
 
         opcode = instr.attrib["opcode"]
         if opcode not in self.instrs:
-            error("Invalid opcode \"" + opcode + "\"", 32)
+            error("Invalid opcode \"" + opcode + "\"", Err.UnexStruct.value)
 
         # validate ammount of args
         if len(instr) != self.instrs[opcode][1]:
-            error("Invalid number of arguments for \"" + opcode + "\"", 32)
+            error("Invalid number of arguments for \"" + opcode + "\"", Err.UnexStruct.value)
         # validate format of args
         if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
             or  any(not arg.attrib for arg in instr)
             or  any(not arg.attrib or attr != "type" for arg in instr for attr in arg.attrib)
             ):
-            error("Invalid instruction argument", 32)
+            error("Invalid instruction argument", Err.UnexStruct.value)
 
 
 def get_args():
@@ -295,7 +329,7 @@ def main():
     try:
         root = ET.parse(src).getroot()
     except ET.ParseError:
-        error("XML input is not well-formed", 31)
+        error("XML input is not well-formed", Err.WellFormed.value)
 
     # validate root
     if (    root.tag != "program"
@@ -303,7 +337,7 @@ def main():
         or  root.attrib["language"].lower() != "ippcode21"
         or  not all(a in {"language", "name", "description"} for a in root.attrib)
        ):
-        error("Invalid root element", 32)
+        error("Invalid root element", Err.UnexStruct.value)
 
     # sort instructions by [attribute] order
     try:
@@ -314,14 +348,19 @@ def main():
            ):
             raise ValueError
     except KeyError:
-        error("Instruction missing attribute \"order\"", 32)
+        error("Instruction missing attribute \"order\"", Err.UnexStruct.value)
     except ValueError:
-        error("Instruction's attribute \"order\" has invalid value", 32)
+        error("Instruction's attribute \"order\" has invalid value", Err.UnexStruct.value)
 
     interp = Interp()
     for child in root:
         interp.check(child)
         interp.run(child)
+
+    for frame in interp.frames:
+        print(frame + ":")
+        for var in interp.frames[frame]:
+            print("(" + interp.frames[frame][var].type.name + ")\t", var, "=", interp.frames[frame][var].val)
 
 if __name__ == "__main__":
     main()
