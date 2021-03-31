@@ -16,6 +16,7 @@ import sys
 import argparse
 import xml.etree.ElementTree as ET
 from enum import Enum
+import re
 
 
 def error(msg, code):
@@ -24,6 +25,16 @@ def error(msg, code):
 
 
 Type = Enum("Type", "UNDEF INT BOOL STRING NIL")
+
+class Var:
+    def __init__(self):
+        self.type = Type.UNDEF
+        self.val = Type.UNDEF
+
+    def set(self, type, value):
+        # TODO check type
+        self.type = type
+        self.val = value
 
 class Interp:
     frames = {
@@ -41,13 +52,13 @@ class Interp:
         else:
             return (not self.frames[frame]) or (name not in self.frames[frame][-1]),
 
-    def var_(self, v):
-        if "type" not in v.attrib:
-            error("Missing \"type\" attribute", 32);
+    def var(self, v):
         if v.attrib["type"] != "var":
-            error("Invalid type", 32);
+            error("Invalid type -- Expected \"var\"", 32);
         try:
             frame, name = v.text.split("@")
+            if (not re.match(r"^[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$", name)):
+                raise Exception()
         except:
             error("Invalid variable name", 32)
         if frame not in {"GF", "LF", "TF"}:
@@ -55,57 +66,65 @@ class Interp:
 
         return frame, name
 
-    def symb_():
+    def symb():
+        """check for constant and variable & return value"""
+        pass
+
+    def label():
         pass
 
     def move_(self, instr):
-        frame, name = self.var_(self.get_arg(instr, 1))
+        frame, name = self.var(self.get_arg(instr, 1))
         if self.is_unique(frame, name):
-            error("Variable undefined", 52)
-
+            error("Variable \"" + name + "\" undefined", 52)
+        # self.frames[frame][name].set()
 
     def defvar_(self, instr):
-        frame, name = self.var_(self.get_arg(instr, 1))
+        frame, name = self.var(self.get_arg(instr, 1))
         if not self.is_unique(frame, name):
             error("Variable already defined", 52)
         if frame == "GF" or frame == "TF":
-            self.frames[frame][name] = [Type.UNDEF.value, Type.UNDEF.value],
+            self.frames[frame][name] = Var()
         else:
             try:
-                self.frames[frame][-1][name] = [Type.UNDEF.value, Type.UNDEF.value],
+                self.frames[frame][-1][name] = Var()
             except:
                 error("Missing Local Frame", 52)
 
 
-    # list of valid instructions in format: "OPCODE" : [functions],
-    #   where functions are:
-    #       interpret_function, check_arg1, check_arg2, check_arg3
+    # list of valid instructions in format:
+    #   "OPCODE" : [run_func, "arg1", "arg2", "arg3"]
     instrs = {
-        "MOVE": (move_, var_, symb_),
+        "MOVE": (move_, "var", "symb"),
 
-        "DEFVAR": (defvar_, var_)
+        "DEFVAR": (defvar_, "var")
     }
 
     def run(self, instr):
-        # get opcode
-        try:
-            opcode = instr.attrib["opcode"]
-        except KeyError:
-            error("Missing \"opcode\" attribute", 32)
-        try:
-            call = self.instrs[opcode][0]
-            args = self.instrs[opcode][1:]
-        except KeyError:
+        """call func from list of instructions"""
+        self.instrs[instr.attrib["opcode"]][0](self, instr)
+
+    def check(self, instr):
+        # validate attributes
+        if (    len(instr.attrib) != 2
+            or  any(a not in {"order", "opcode"} for a in instr.attrib)
+            ):
+            error("Invalid attributes", 32)
+
+        opcode = instr.attrib["opcode"]
+        if opcode not in self.instrs:
             error("Invalid opcode \"" + opcode + "\"", 32)
 
         # validate ammount of args
-        if len(args) != len(instr):
+        if len(instr) != len(self.instrs[opcode])-1:
             error("Invalid number of arguments for \"" + opcode + "\"", 32)
+        # validate format of args
+        if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
+            or  any(not arg.attrib for arg in instr)
+            or  any(not arg.attrib or attr != "type" for arg in instr for attr in arg.attrib)
+            ):
+            error("Invalid instruction argument", 32)
 
-        call(self, instr)
-
-
-interp = Interp()
 
 
 def get_args():
@@ -134,15 +153,6 @@ def get_args():
         args.input = sys.stdin
 
     return args.source, args.input
-
-
-def iterate_instructions(root):
-    for child in root:
-        # print(child.tag, child.attrib)
-        # for attr in child:
-        #     print("\t", attr.attrib["type"], ": ", attr.text)
-
-        interp.run(child)
 
 
 def main():
@@ -175,7 +185,10 @@ def main():
     except ValueError:
         error("Instruction's attribute \"order\" has invalid value", 32)
 
-    iterate_instructions(root)
+    interp = Interp()
+    for child in root:
+        interp.check(child)
+        interp.run(child)
 
 if __name__ == "__main__":
     main()
