@@ -1,3 +1,5 @@
+#!/usr/bin/env php7.4
+
 <?php
 /*
  * File: test.php
@@ -290,13 +292,12 @@ function check_output($out, $filename, $handles) {
   if ($handles->interp) { // compare files using unix diff
     $command = "diff $filename $filename.new >/dev/null";
     exec($command, $out, $ret);
+    exec("rm -f $filename.new");
   }
   else {  // compare files using A7Soft JExamXML
     $command = "java -jar " . $handles->xml .
     " $filename $filename.new /dev/null " . $handles->cfg;
     exec($command, $out, $ret);
-
-    // TEAR DOWN
     exec("rm -f $filename.new $filename.log");
   }
 
