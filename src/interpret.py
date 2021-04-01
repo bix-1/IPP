@@ -54,6 +54,7 @@ class Interp:
         "LF": [],
         "TF": {}
     }
+    labels = {}
 
     def get_arg(self, instr, n):
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
@@ -157,12 +158,24 @@ class Interp:
             except:
                 error("Invalid integer value", Err.UnexStruct)
         elif type == "string":
-            return Type.STRING, re.sub(r"\\(\d{3})", lambda x: chr(int(x.group(1))), s.text)
+            if not s.text:
+                return Type.STRING, ""
+            else:
+                return Type.STRING, re.sub(r"\\(\d{3})", lambda x: chr(int(x.group(1))), s.text)
 
         error("Invalid constant value", Err.UnexStruct)
 
-    def label(self, instr):
-        pass
+    def label(self, l, defining):
+        if (
+                l.attrib["type"] != "label" or not l.text
+            or  not re.match(r"^[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$", l.text)
+            ):
+            error("Invalid label", Err.Operands)
+        if defining and l.text in self.labels:
+            error("LABEL: Redefinition of label", Err.Semantics)
+        elif not defining and l.text not in self.labels:
+            error("LABEL: Undefined label", Err.Semantics)
+        return l.text
 
 
     def MOVE(self, instr):
@@ -262,28 +275,77 @@ class Interp:
         pass
 
     def WRITE(self, instr):
-        pass
+        type, val = self.symb(self.get_arg(instr, 1))
+        str = {
+            Type.INT: val,
+            Type.STRING: val,
+            Type.BOOL: "true" if val else "false",
+            Type.NIL: "",
+        }[type]
+        print(str, end="")
 
     def CONCAT(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type1, val1 = self.symb(self.get_arg(instr, 2))
+        type2, val2 = self.symb(self.get_arg(instr, 3))
+        val1 = "" if val1 == Type.UNDEF else val1
+        val2 = "" if val2 == Type.UNDEF else val2
+        if (
+                type1 not in {Type.UNDEF, Type.STRING}
+            or  type2 not in {Type.UNDEF, Type.STRING}
+            ):
+            error("CONCAT: Both operands must be of type \"STRING\"", Err.Operands)
+        self.store(frame, name, Type.STRING, val1 + val2)
 
     def STRLEN(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.STRING:
+            error("STRLEN: Operand must be of type \"STRING\"", Err.Operands)
+        self.store(frame, name, Type.INT, len(val))
 
     def GETCHAR(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type1, str = self.symb(self.get_arg(instr, 2))
+        type2, pos = self.symb(self.get_arg(instr, 3))
+        if type1 != Type.STRING or type2 != Type.INT:
+            error("GETCHAR: Operands must be of types \"STRING\" & \"INT\"", Err.Operands)
+        if pos > len(str):
+            error("GETCHAR: Position out of range", Err.Str)
+        self.store(frame, name, Type.STRING, str[pos])
 
     def SETCHAR(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type0, src = self.var(self.get_arg(instr, 1))
+        type1, pos = self.symb(self.get_arg(instr, 2))
+        type2, str = self.symb(self.get_arg(instr, 3))
+        if (    type0 != Type.STRING
+            or  type1 != Type.INT or type2 != Type.STRING
+            ):
+            error("SETCHAR: Invalid operand types", Err.Operands)
+        if pos > len(src) or not str:
+            error("SETCHAR: Position out of range", Err.Str)
+        self.store(frame, name, Type.STRING, src[:pos] + str[0] + src[pos+1:])
 
     def TYPE(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, _ = self.var(self.get_arg(instr, 2))
+        str_type = {
+            Type.UNDEF: "",
+            Type.INT: "int",
+            Type.BOOL: "bool",
+            Type.STRING: "string",
+            Type.NIL: "nil"
+        }[type]
+        self.store(frame, name, Type.STRING, str_type)
 
     def LABEL(self, instr):
-        pass
+        label = self.label(self.get_arg(instr, 1), True)
+        self.labels[label] = instr.attrib["order"]
 
     def JUMP(self, instr):
-        pass
+        label = self.label(self.get_arg(instr, 1), False)
+        return self.labels[label]
 
     def JUMPIFEQ(self, instr):
         pass
@@ -314,14 +376,16 @@ class Interp:
         "INT2CHAR": (INT2CHAR, 2), "STRI2INT": (STRI2INT, 3),
         "READ": (READ, 2), "WRITE": (WRITE, 1), "CONCAT": (CONCAT, 3),
         "STRLEN": (STRLEN, 2), "GETCHAR": (GETCHAR, 3),
-        "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (LABEL, 1),
+        "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (lambda *args: None, 1),
         "JUMP": (JUMP, 1), "JUMPIFEQ": (JUMPIFEQ, 3), "JUMPIFNEQ": (JUMPIFNEQ, 3),
         "EXIT": (EXIT, 1), "DPRINT": (DPRINT, 1), "BREAK": (BREAK, 0)
     }
 
     def run(self, instr):
-        """call func from list of instructions"""
-        self.instrs[instr.attrib["opcode"]][0](self, instr)
+        """call func from list of instructions
+        Return order_n of jmp destination in case of jmp instruction
+        """
+        return self.instrs[instr.attrib["opcode"]][0](self, instr)
 
     def check(self, instr):
         # validate attributes
@@ -375,7 +439,6 @@ def get_args():
 
 def main():
     src, input = get_args()
-
     # get source code in XML tree
     try:
         root = ET.parse(src).getroot()
@@ -404,14 +467,18 @@ def main():
         error("Instruction's attribute \"order\" has invalid value", Err.UnexStruct)
 
     interp = Interp()
+    # handle instr validation & labels
     for child in root:
         interp.check(child)
-        interp.run(child)
+        if child.attrib["opcode"] == "LABEL":
+            interp.LABEL(child)
 
-    for frame in interp.frames:
-        print(frame + ":")
-        for var in interp.frames[frame]:
-            print("(" + interp.frames[frame][var].type.name + ")\t", var, "=", interp.frames[frame][var].val)
+    i = 0
+    N = len(root)
+    while i < N:
+        jmp = interp.run(root[i])   # check for jump dest
+        # assign jmp destination OR next instruction
+        i = i + 1 if not jmp else 1 + next(j for j in range(len(root)) if root[j].attrib["order"] == jmp)
 
 if __name__ == "__main__":
     main()
