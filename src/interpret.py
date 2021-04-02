@@ -35,7 +35,7 @@ class Err(Enum):
     UndefVal = 56
     InvVal = 57
     Str = 58
-Type = Enum("Type", "UNDEF INT BOOL STRING NIL")
+Type = Enum("Type", "UNDEF INT BOOL STRING FLOAT NIL")
 
 class Var:
     def __init__(self):
@@ -90,17 +90,20 @@ class Interp:
         frame, name = self.var(self.get_arg(instr, 1))
         type1, val1 = self.symb(self.get_arg(instr, 2))
         type2, val2 = self.symb(self.get_arg(instr, 3))
-        if type1 not in {Type.INT, Type.UNDEF} or type2 not in {Type.INT, Type.UNDEF}:
-            error(op + ": Both operands must be \"INT\"", Err.Operands)
-        if op == "IDIV" and val2 == 0:
-            error("IDIV: Zero division", Err.InvVal)
+        if (    type1 != type2 or type1 not in {Type.INT, Type.FLOAT}
+            or  type2 not in {Type.INT, Type.FLOAT}
+            ):
+            error(op + ": Operand types not matching", Err.Operands)
+        if op in {"IDIV", "DIV"} and val2 == 0:
+            error("IDIV/DIV: Zero division", Err.InvVal)
         val = {
             "ADD":  lambda x,y: x + y,
             "SUB":  lambda x,y: x - y,
             "MUL":  lambda x,y: x * y,
-            "IDIV": lambda x,y: x // y
+            "IDIV": lambda x,y: x // y,
+            "DIV": lambda x,y: x / y
         }[op](val1, val2)
-        self.store(frame, name, Type.INT, val)
+        self.store(frame, name, type1, val)
 
     def relat(self, instr, op):
         frame, name = self.var(self.get_arg(instr, 1))
@@ -166,7 +169,11 @@ class Interp:
             frame, name = self.var(s)
             if self.is_unique(frame, name):
                 error("Variable undefined", Err.UndefVar)
-            if frame in {"GF", "TF"}:
+            elif frame == "GF" and self.frames[frame][name].type == Type.UNDEF:
+                error("Undefined Value", Err.UndefVal)
+            elif frame == "TF" and self.frames[frame][name].type == Type.UNDEF:
+                error("Undefined Value", Err.UndefVal)
+            elif frame in {"GF", "TF"}:
                 var = self.frames[frame][name]
             else:
                 var = self.frames[frame][-1][name]
@@ -189,6 +196,11 @@ class Interp:
                 return Type.STRING, ""
             else:
                 return Type.STRING, re.sub(r"\\(\d{3})", lambda x: chr(int(x.group(1))), s.text)
+        elif type == "float":
+            try:
+                return Type.FLOAT, float.fromhex(s.text)
+            except:
+                error("Invalid float value", Err.UnexStruct)
 
         error("Invalid constant value", Err.UnexStruct)
 
@@ -207,13 +219,14 @@ class Interp:
     def type(self, t):
         if (
                 t.attrib["type"] != "type" or not t.text
-            or  t.text not in {"int", "string", "bool"}
+            or  t.text not in {"int", "string", "bool", "float"}
             ):
             error("Invalid type", Err.Operands)
         return {
             "int": Type.INT,
             "string": Type.STRING,
             "bool": Type.BOOL,
+            "float": Type.FLOAT,
         }[t.text]
 
 
@@ -293,6 +306,9 @@ class Interp:
     def IDIV(self, instr):
         self.arithm(instr, "IDIV")
 
+    def DIV(self, instr):
+        self.arithm(instr, "DIV")
+
     def LT(self, instr):
         self.relat(instr, "LT")
 
@@ -336,6 +352,20 @@ class Interp:
             error("STRI2INT: Position out of range", Err.Str)
         self.store(frame, name, Type.STRING, str[pos])
 
+    def INT2FLOAT(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.INT:
+            error("INT2FLOAT: Invalid operands", Err.Operands)
+        self.store(frame, name, Type.FLOAT, float(val))
+
+    def FLOAT2INT(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.FLOAT:
+            error("FLOAT2INT: Invalid operands", Err.Operands)
+        self.store(frame, name, Type.INT, int(val))
+
     def READ(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         type = self.type(self.get_arg(instr, 2))
@@ -344,7 +374,8 @@ class Interp:
             val = {
                 Type.INT: lambda x: int(x),
                 Type.STRING: lambda x: str(x),
-                Type.BOOL: lambda x: True if re.match(r"^true$", x, re.IGNORECASE) else False
+                Type.BOOL: lambda x: True if re.match(r"^true$", x, re.IGNORECASE) else False,
+                Type.FLOAT: lambda x: float.fromhex(x),
             }[type](in_val)
         except:
             self.store(frame, name, Type.NIL, Type.NIL)
@@ -356,11 +387,12 @@ class Interp:
         if type == Type.UNDEF:
             error("WRITE: Undefined Value", Err.UndefVal)
         str = {
-            Type.INT: val,
-            Type.STRING: val,
-            Type.BOOL: "true" if val else "false",
-            Type.NIL: "",
-        }[type]
+            Type.INT: lambda x: x,
+            Type.STRING: lambda x: x,
+            Type.BOOL: lambda x: "true" if x else "false",
+            Type.NIL: lambda x: "",
+            Type.FLOAT: lambda x: float.hex(x),
+        }[type](val)
         print(str, end="")
 
     def CONCAT(self, instr):
@@ -408,15 +440,19 @@ class Interp:
 
     def TYPE(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
-        type, _ = self.symb(self.get_arg(instr, 2))
-        str_type = {
-            Type.UNDEF: "",
-            Type.INT: "int",
-            Type.BOOL: "bool",
-            Type.STRING: "string",
-            Type.NIL: "nil"
-        }[type]
-        self.store(frame, name, Type.STRING, str_type)
+        elem = self.get_arg(instr, 2)
+        type = elem.attrib["type"]
+        if type == "var":
+            fr, nm = self.var(elem)
+            if self.is_unique(fr, nm):
+                error("Variable undefined", Err.UndefVar)
+            elif fr in {"GF", "TF"}:
+                str_type = self.frames[fr][nm].type.name
+            else:
+                str_type = self.frames[fr][-1][nm].type.name
+            self.store(frame, name, Type.STRING, str_type.lower() if str_type != "UNDEF" else "")
+        else:
+            self.store(frame, name, Type.STRING, type)
 
     def LABEL(self, instr):
         label = self.label(self.get_arg(instr, 1), True)
@@ -476,9 +512,11 @@ class Interp:
         "POPFRAME": (POPFRAME, 0), "DEFVAR": (DEFVAR, 1),
         "CALL": (CALL, 1), "RETURN": (RETURN, 0), "PUSHS": (PUSHS, 1),
         "POPS": (POPS, 1), "ADD": (ADD, 3), "SUB": (SUB, 3),
-        "MUL": (MUL, 3), "IDIV": (IDIV, 3), "LT": (LT, 3), "GT": (GT, 3),
-        "EQ": (EQ, 3),"AND": (AND, 3), "OR": (OR, 3), "NOT": (NOT, 2),
+        "MUL": (MUL, 3), "IDIV": (IDIV, 3), "DIV": (DIV, 3),
+        "LT": (LT, 3), "GT": (GT, 3), "EQ": (EQ, 3),
+        "AND": (AND, 3), "OR": (OR, 3), "NOT": (NOT, 2),
         "INT2CHAR": (INT2CHAR, 2), "STRI2INT": (STRI2INT, 3),
+        "INT2FLOAT": (INT2FLOAT, 2), "FLOAT2INT": (FLOAT2INT, 2),
         "READ": (READ, 2), "WRITE": (WRITE, 1), "CONCAT": (CONCAT, 3),
         "STRLEN": (STRLEN, 2), "GETCHAR": (GETCHAR, 3),
         "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (lambda *args: None, 1),
