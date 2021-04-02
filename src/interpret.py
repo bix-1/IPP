@@ -56,7 +56,7 @@ class Interp:
     frames = {
         "GF": {},
         "LF": [],
-        "TF": {}
+        "TF": Type.UNDEF
     }
     labels = {}
     calls = []
@@ -66,10 +66,14 @@ class Interp:
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
 
     def is_unique(self, frame, name):
-        if frame == "GF" or frame == "TF":
+        if frame == "GF":
+            return name not in self.frames[frame]
+        elif frame == "TF":
+            if self.frames["TF"] == Type.UNDEF:
+                error("Undefined Temporary Frame", Err.UndefFrame)
             return name not in self.frames[frame]
         else:
-            return (not self.frames[frame]) or (name not in self.frames[frame][-1]),
+            return len(self.frames[frame]) == 0 or (name not in self.frames[frame][-1])
 
     def store(self, frame, name, type, val):
         if self.is_unique(frame, name):
@@ -162,7 +166,10 @@ class Interp:
             frame, name = self.var(s)
             if self.is_unique(frame, name):
                 error("Variable undefined", Err.UndefVar)
-            var = self.frames[frame][name]
+            if frame in {"GF", "TF"}:
+                var = self.frames[frame][name]
+            else:
+                var = self.frames[frame][-1][name]
             return var.type, var.val
         elif type == "nil":
             if s.text == "nil":
@@ -219,14 +226,14 @@ class Interp:
         self.frames["TF"] = {}
 
     def PUSHFRAME(self, instr):
-        if len(self.frames["TF"]) == 0:
-            error("PUSHFRAME: Temporary Frame Undefined", Eff.UndefFrame)
+        if self.frames["TF"] == Type.UNDEF:
+            error("PUSHFRAME: Undefined Temporary Frame", Err.UndefFrame)
         self.frames["LF"].append(self.frames["TF"])
-        self.frames["TF"] = {}
+        self.frames["TF"] = Type.UNDEF
 
     def POPFRAME(self, instr):
         if len(self.frames["LF"]) == 0:
-            error("POPFRAME: Missing Local Frame", Eff.UndefFrame)
+            error("POPFRAME: Missing Local Frame", Err.UndefFrame)
         self.frames["TF"] = self.frames["LF"].pop()
 
     def DEFVAR(self, instr):
@@ -265,9 +272,9 @@ class Interp:
         self.stack.append((type, val))
 
     def POPS(self, instr):
-        if not self.stack:
+        if len(self.stack) == 0:
             error("POPS: Stack is Empty", Err.UndefVal)
-        if not len(instr) == 0:
+        if len(instr) == 0:
             self.stack.append(self.stack[-1])
             return
         frame, name = self.var(self.get_arg(instr, 1))
@@ -439,10 +446,21 @@ class Interp:
 
     def BREAK(self, instr):
         print("INSTR N: [" + str(self.cnt) + "] with ORDER: [" + str(instr.attrib["order"]) + "]", file=sys.stderr)
-        for frame in interp.frames:
-            print("[" + frame + "]:", file=sys.stderr)
-            for var in interp.frames[frame]:
-                print("\t(" + interp.frames[frame][var].type.name + ")\t", var, "= [" + str(interp.frames[frame][var].val) + "]", file=sys.stderr)
+        print("[GF]:", file=sys.stderr)
+        for var in self.frames["GF"]:
+            print("\t(" + self.frames["GF"][var].type.name + ")\t", var, "= [" + str(self.frames["GF"][var].val) + "]", file=sys.stderr)
+
+        print("[LF]:", file=sys.stderr)
+        for i in range(len(self.frames["LF"])):
+            print("\t{")
+            for var in self.frames["LF"][i]:
+                print("\t    (" + self.frames["LF"][i][var].type.name + ")\t", var, "= [" + str(self.frames["LF"][i][var].val) + "]", file=sys.stderr)
+            print("\t}")
+
+        print("[TF]:", file=sys.stderr)
+        if self.frames["TF"] != Type.UNDEF:
+            for var in self.frames["TF"]:
+                print("\t(" + self.frames["TF"][var].type.name + ")\t", var, "= [" + str(self.frames["TF"][var].val) + "]", file=sys.stderr)
 
         print("[STACK]:")
         for val in self.stack:
@@ -473,18 +491,21 @@ class Interp:
         Return order_n of jmp destination in case of jmp instruction
         """
         self.cnt += 1
-        return self.instrs[instr.attrib["opcode"]][0](self, instr)
+        return self.instrs[instr.attrib["opcode"].upper()][0](self, instr)
 
     def check(self, instr):
+        # validate tag
+        if instr.tag != "instruction":
+            error("Invalid instruction tag", Err.UnexStruct)
         # validate attributes
         if (    len(instr.attrib) != 2
             or  any(a not in {"order", "opcode"} for a in instr.attrib)
             ):
             error("Invalid attributes", Err.UnexStruct)
 
-        opcode = instr.attrib["opcode"]
-        if opcode not in self.instrs:
-            error("Invalid opcode", Err.UnexStruct)
+        opcode = instr.attrib["opcode"].upper()
+        if opcode.upper() not in self.instrs:
+            error("Invalid opcode \"" + str(opcode) + "\"", Err.UnexStruct)
 
         # validate ammount of args
         if len(instr) != self.instrs[opcode][1] and opcode not in {"PUSHS", "POPS"}:
