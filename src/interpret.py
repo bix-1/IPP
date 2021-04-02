@@ -9,7 +9,7 @@
 
 
 # TODO:
-
+#   TF, frames
 
 import sys
 import argparse
@@ -53,13 +53,14 @@ class Var:
 
 class Interp:
     cnt = 0
-
     frames = {
         "GF": {},
         "LF": [],
         "TF": {}
     }
     labels = {}
+    calls = []
+    stack = []
 
     def get_arg(self, instr, n):
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
@@ -236,16 +237,37 @@ class Interp:
                 error("DEFVAR: Missing Local Frame", Err.UndefFrame)
 
     def CALL(self, instr):
-        pass
+        try:
+            self.calls.append(int(instr.attrib["order"]) + 1)
+        except:
+            error("CALL: Allocation Failed", 99)
+        else:
+            label = self.label(self.get_arg(instr, 1), False)
+            return self.labels[label]
 
     def RETURN(self, instr):
-        pass
+        if not self.calls:
+            error("RETURN: Missing destination", Err.UndefVal)
+        return self.calls.pop()
 
     def PUSHS(self, instr):
-        pass
+        if len(instr) == 0:
+            if not self.stack:
+                error("PUSHS: Stack is Empty", Err.UndefVal)
+            self.stack.append(self.stack[-1])
+            return
+        type, val = self.symb(self.get_arg(instr, 1))
+        self.stack.append((type, val))
 
     def POPS(self, instr):
-        pass
+        if not self.stack:
+            error("POPS: Stack is Empty", Err.UndefVal)
+        if not len(instr) == 0:
+            self.stack.append(self.stack[-1])
+            return
+        frame, name = self.var(self.get_arg(instr, 1))
+        tmp = self.stack.pop()
+        self.store(frame, name, tmp[0], tmp[1])
 
     def ADD(self, instr):
         self.arithm(instr, "ADD")
@@ -417,6 +439,11 @@ class Interp:
             for var in interp.frames[frame]:
                 print("\t(" + interp.frames[frame][var].type.name + ")\t", var, "= [" + str(interp.frames[frame][var].val) + "]", file=sys.stderr)
 
+        print("[STACK]:")
+        for val in self.stack:
+            print("\t(" + val[0].name + ")", str(val[1]))
+        print("\n")
+
 
     # list of valid instructions in format:
     #   "OPCODE" : [run_func, "arg1", "arg2", "arg3"]
@@ -455,7 +482,7 @@ class Interp:
             error("Invalid opcode", Err.UnexStruct)
 
         # validate ammount of args
-        if len(instr) != self.instrs[opcode][1]:
+        if len(instr) != self.instrs[opcode][1] and opcode not in {"PUSHS", "POPS"}:
             error("Invalid number of arguments for \"" + opcode + "\"", Err.UnexStruct)
         # validate format of args
         if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
@@ -544,7 +571,9 @@ def main():
     while i < N:
         jmp = interp.run(root[i])   # check for jump dest
         # assign jmp destination OR next instruction
-        i = i + 1 if not jmp else 1 + next(j for j in range(len(root)) if root[j].attrib["order"] == jmp)
+        i = i + 1 if not jmp else 1 + next((j for j in range(len(root)) if root[j].attrib["order"] == jmp), N)
+
+    sys.stdin.close()
 
 if __name__ == "__main__":
     main()
