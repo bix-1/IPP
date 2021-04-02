@@ -23,6 +23,9 @@ def error(msg, code):
 
 
 class Err(Enum):
+    Parameter = 10
+    FileIn = 11
+    FileOut = 12
     WellFormed = 31
     UnexStruct = 32
     Semantics = 52
@@ -49,6 +52,8 @@ class Var:
         self.val = value
 
 class Interp:
+    cnt = 0
+
     frames = {
         "GF": {},
         "LF": [],
@@ -121,6 +126,20 @@ class Interp:
         }[op](val1, val2)
         self.store(frame, name, Type.BOOL, val)
 
+    def cond_jmp(self, instr, op):
+        label = self.label(self.get_arg(instr, 1), False)
+        type1, val1 = self.symb(self.get_arg(instr, 2))
+        type2, val2 = self.symb(self.get_arg(instr, 3))
+        if (type1 != type2) and type1 != Type.NIL and type2 != Type.NIL:
+            error("JUMPIFEQ: Invalid operands", Err.Operands)
+        cond = {
+            "EQ": val1 == val2,
+            "NEQ": val1 != val2
+        }[op]
+        if cond:
+            return self.labels[label]
+
+
     def var(self, v):
         if v.attrib["type"] != "var":
             error("Invalid operand type -- Expected \"var\"", Err.UnexStruct);
@@ -170,12 +189,24 @@ class Interp:
                 l.attrib["type"] != "label" or not l.text
             or  not re.match(r"^[a-zA-Z_\-$&%*!?][a-zA-Z0-9_\-$&%*!?]*$", l.text)
             ):
-            error("Invalid label", Err.Operands)
+            error("LABEL: Invalid label", Err.Operands)
         if defining and l.text in self.labels:
             error("LABEL: Redefinition of label", Err.Semantics)
         elif not defining and l.text not in self.labels:
             error("LABEL: Undefined label", Err.Semantics)
         return l.text
+
+    def type(self, t):
+        if (
+                t.attrib["type"] != "type" or not t.text
+            or  t.text not in {"int", "string", "bool"}
+            ):
+            error("Invalid type", Err.Operands)
+        return {
+            "int": Type.INT,
+            "string": Type.STRING,
+            "bool": Type.BOOL,
+        }[t.text]
 
 
     def MOVE(self, instr):
@@ -272,10 +303,24 @@ class Interp:
         self.store(frame, name, Type.STRING, str[pos])
 
     def READ(self, instr):
-        pass
+        frame, name = self.var(self.get_arg(instr, 1))
+        type = self.type(self.get_arg(instr, 2))
+        try:
+            in_val = input()
+            val = {
+                Type.INT: lambda x: int(x),
+                Type.STRING: lambda x: str(x),
+                Type.BOOL: lambda x: True if re.match(r"^true$", x, re.IGNORECASE) else False
+            }[type](in_val)
+        except:
+            self.store(frame, name, Type.NIL, Type.NIL)
+        else:
+            self.store(frame, name, type, val)
 
     def WRITE(self, instr):
         type, val = self.symb(self.get_arg(instr, 1))
+        if type == Type.UNDEF:
+            error("WRITE: Undefined Value", Err.UndefVal)
         str = {
             Type.INT: val,
             Type.STRING: val,
@@ -329,7 +374,7 @@ class Interp:
 
     def TYPE(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
-        type, _ = self.var(self.get_arg(instr, 2))
+        type, _ = self.symb(self.get_arg(instr, 2))
         str_type = {
             Type.UNDEF: "",
             Type.INT: "int",
@@ -348,19 +393,29 @@ class Interp:
         return self.labels[label]
 
     def JUMPIFEQ(self, instr):
-        pass
+        return self.cond_jmp(instr, "EQ")
 
     def JUMPIFNEQ(self, instr):
-        pass
+        return self.cond_jmp(instr, "NEQ")
 
     def EXIT(self, instr):
-        pass
+        type, val = self.symb(self.get_arg(instr, 1))
+        if type != Type.INT:
+            error("EXIT: Invalid operand", Err.Operands)
+        if not (0 <= val <= 49):
+            error("EXIT: Invalid exit value", Err.InvVal)
+        sys.exit(val)
 
     def DPRINT(self, instr):
-        pass
+        _, val = self.symb(self.get_arg(instr, 1))
+        print(val, file=sys.stderr)
 
     def BREAK(self, instr):
-        pass
+        print("INSTR N: [" + str(self.cnt) + "] with ORDER: [" + str(instr.attrib["order"]) + "]", file=sys.stderr)
+        for frame in interp.frames:
+            print("[" + frame + "]:", file=sys.stderr)
+            for var in interp.frames[frame]:
+                print("\t(" + interp.frames[frame][var].type.name + ")\t", var, "= [" + str(interp.frames[frame][var].val) + "]", file=sys.stderr)
 
 
     # list of valid instructions in format:
@@ -385,6 +440,7 @@ class Interp:
         """call func from list of instructions
         Return order_n of jmp destination in case of jmp instruction
         """
+        self.cnt += 1
         return self.instrs[instr.attrib["opcode"]][0](self, instr)
 
     def check(self, instr):
@@ -428,17 +484,28 @@ def get_args():
     # parse CL arguments
     args = aparser.parse_args()
     if not (args.source or args.input):
-        error("At least one of --source, --input needs to be specified", 11)
-    if not args.source:
+        error("At least one of --source, --input needs to be specified", 10)
+    if args.source:
+        try:
+            tmp = open(args.source)
+        except:
+            error("Invalid source file", Err.FileIn)
+    else:
         args.source = sys.stdin
-    if not args.input:
-        args.input = sys.stdin
+    # redirect specified input to STDIN
+    if args.input:
+        try:
+            sys.stdin = open(args.input)
+        except:
+            error("Invalid input file", Err.FileIn)
 
-    return args.source, args.input
+    return args.source
 
+
+interp = Interp()
+src = get_args()
 
 def main():
-    src, input = get_args()
     # get source code in XML tree
     try:
         root = ET.parse(src).getroot()
@@ -456,8 +523,8 @@ def main():
     # sort instructions by [attribute] order
     try:
         root[:] = sorted(root, key=lambda x: int(x.attrib["order"]))
-        # validate starting number & no duplicates
-        if (    root[0].attrib["order"] != "1"
+        # validate all positive & no duplicates
+        if (    int(root[0].attrib["order"]) < 1
             or  len(root) != len(set([x.attrib["order"] for x in root]))
            ):
             raise ValueError
@@ -466,7 +533,6 @@ def main():
     except ValueError:
         error("Instruction's attribute \"order\" has invalid value", Err.UnexStruct)
 
-    interp = Interp()
     # handle instr validation & labels
     for child in root:
         interp.check(child)
