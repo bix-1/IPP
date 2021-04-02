@@ -44,8 +44,8 @@ class Var:
 
     def set(self, type, value):
         # TODO del??
-        if self.type != Type.UNDEF and type != Type.UNDEF and type != self.type:
-            error("Incompatible variable types", Err.Semantics)
+        # if self.type != Type.UNDEF and type != Type.UNDEF and type != self.type:
+        #     error("Incompatible variable types", Err.Semantics)
         if type == Type.UNDEF and self.type != Type.UNDEF:
             pass
         self.type = type
@@ -216,13 +216,18 @@ class Interp:
         self.store(frame, name, type, val)
 
     def CREATEFRAME(self, instr):
-        pass
+        self.frames["TF"] = {}
 
     def PUSHFRAME(self, instr):
-        pass
+        if len(self.frames["TF"]) == 0:
+            error("PUSHFRAME: Temporary Frame Undefined", Eff.UndefFrame)
+        self.frames["LF"].append(self.frames["TF"])
+        self.frames["TF"] = {}
 
     def POPFRAME(self, instr):
-        pass
+        if len(self.frames["LF"]) == 0:
+            error("POPFRAME: Missing Local Frame", Eff.UndefFrame)
+        self.frames["TF"] = self.frames["LF"].pop()
 
     def DEFVAR(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
