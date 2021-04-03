@@ -53,6 +53,9 @@ class Var:
 
 class Interp:
     cnt = 0
+    vars = 0
+    vars_max = 0
+    hots = {}
     frames = {
         "GF": {},
         "LF": [],
@@ -628,6 +631,11 @@ class Interp:
             error("EXIT: Invalid operand", Err.Operands)
         if not (0 <= val <= 49):
             error("EXIT: Invalid exit value", Err.InvVal)
+
+        print(interp.cnt)
+        print(max(interp.hots, key=interp.hots.get))
+        print(interp.vars_max)
+
         sys.exit(val)
 
     def DPRINT(self, instr):
@@ -690,8 +698,18 @@ class Interp:
         """call func from list of instructions
         Return order_n of jmp destination in case of jmp instruction
         """
-        self.cnt += 1
-        return self.instrs[instr.attrib["opcode"].upper()][0](self, instr)
+        opcode = instr.attrib["opcode"].upper()
+        order = instr.attrib["order"]
+        # NOTE unoptimized
+        self.vars = (len([v for v in self.frames["GF"] if v[0] != Type.UNDEF])
+            +   len([v for v in self.frames["TF"] if v[0] != Type.UNDEF]) if self.frames["TF"] != Type.UNDEF else 0
+            +   len([var for frame in self.frames["LF"] for var in frame if var[0] != Type.UNDEF]))
+        self.vars_max = max(self.vars, self.vars_max)
+
+        if opcode not in {"LABEL", "DPRINT", "BREAK"}:
+            self.cnt += 1
+        self.hots[order] = self.hots.get(order, 0) + 1
+        return self.instrs[opcode][0](self, instr)
 
     def check(self, instr):
         # validate tag
@@ -734,8 +752,35 @@ def get_args():
         default = "",
         help="specify source for inputs of interpreted code")
 
+    aparser.add_argument(
+        "--stats",
+        required = False,
+        help="specify file for output of code statistics")
+    aparser.add_argument(
+        "--insts",
+        required = False,
+        action="store_true",
+        help="number of executed instructions")
+    aparser.add_argument(
+        "--hot",
+        required = False,
+        action="store_true",
+        help="\"order\" attribute of most executed instruction")
+    aparser.add_argument(
+        "--vars",
+        required = False,
+        action="store_true",
+        help="max number of simultaneously initialized variables")
+
+
+
+
+    if "--help" in sys.argv or "-h" in sys.argv and len(sys.argv) > 2:
+        error("--help cannot be combined with other options", Err.Parameter)
+
     # parse CL arguments
     args = aparser.parse_args()
+
     if not (args.source or args.input):
         error("At least one of --source, --input needs to be specified", Err.Parameter)
     if args.source:
@@ -752,11 +797,19 @@ def get_args():
         except:
             error("Invalid input file", Err.FileIn)
 
-    return args.source
+    if any([args.insts, args.hot, args.vars]) and not args.stats:
+        error("Stats options missing --stats", Err.Parameter)
+
+    if args.stats:
+        stats = [s[2:] for s in sys.argv if s in {"--insts", "--hot", "--vars"}]
+    else:
+        stats = []
+
+    return args.source, stats, args.stats
 
 
 interp = Interp()
-src = get_args()
+src, stats, stats_file = get_args()
 
 def main():
     # get source code in XML tree
