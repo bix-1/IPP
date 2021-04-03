@@ -186,32 +186,35 @@ function run_test($filename, $handles) {
   // EXECUTION
   if ($handles->parse) {
     if ($handles->interp) { // parse && interpret
-      $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null | python3.8 " . $handles->intr . " --input=" . str_replace(".src", ".in", $filename);
+      $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null | python3.8 " . $handles->intr . " --input=" . str_replace(".src", ".in", $filename)  . " 1>my.out.new 2>/dev/null";
     }
     else {                  // parse only
-      $command = "php7.4 " . $handles->parser . " <$filename 2>/dev/null";
+      $command = "php7.4 " . $handles->parser . " <$filename 1>my.out.new 2>/dev/null";
     }
   }
   else {                    // interpret only
-    $command = "python3.8 " . $handles->intr . " --source=" . $filename . " --input=" . str_replace(".src", ".in", $filename) . " 2>/dev/null";
+    $command = "python3.8 " . $handles->intr . " --source=" . $filename . " --input=" . str_replace(".src", ".in", $filename) . " 1>my.out.new 2>/dev/null";
   }
 
-  exec($command, $out, $ret);
-
+  $ret = rtrim(shell_exec($command . "; echo \$?"));
   // VALIDATION
   // check return values
   if ($ret == get_ret($filename)) {
     if ($ret != 0) { // test case passed && parsing failed
-      return true;
+      $passed = true;
     } // XML output needs to be checked otherwise
-    if (check_output($out, $filename, $handles)) {
-      return true;
+    else if (check_output($filename, $handles)) {
+      $passed = true;
     }
-    else return false;
+    else {
+      $passed = false;
+    }
   }
   else {
-    return false;
+    $passed = false;
   }
+  exec("rm -f my.out.new");
+  return $passed;
 }
 
 
@@ -261,7 +264,7 @@ function get_ret($filename) {
     fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
     exit(41);
   }
-  $ret = fgets($file);
+  $ret = trim(fgets($file));
   fclose($file);
 
   return $ret;
@@ -271,34 +274,20 @@ function get_ret($filename) {
 // compares generated output with reference file
 // expects [string] output & [string] filename (.src) & [object] file handles
 // returns [bool] TRUE if files matched, FALSE otherwise
-function check_output($out, $filename, $handles) {
+function check_output($filename, $handles) {
   $filename = str_replace(".src", ".out", $filename);
-
-  // generate file with output
-  if (file_exists("$filename.new")) {
-    fwrite(STDERR, "ERROR: Failed to create file \"$filename.new\"\n");
-    exit(41);
-  }
-  $file = fopen("$filename.new", "w");
-  if (!$file) {
-    fwrite(STDERR, "ERROR: Failed to open file\n");
-    exit(41);
-  }
-  fwrite($file, implode("\n", $out));
-  fclose($file);
 
   // compare files
   $ret = 0;
   if ($handles->interp) { // compare files using unix diff
-    $command = "diff $filename $filename.new >/dev/null";
+    $command = "diff $filename my.out.new";
     exec($command, $out, $ret);
-    exec("rm -f $filename.new");
   }
   else {  // compare files using A7Soft JExamXML
     $command = "java -jar " . $handles->xml .
-    " $filename $filename.new /dev/null " . $handles->cfg;
+    " $filename my.out.new /dev/null " . $handles->cfg;
     exec($command, $out, $ret);
-    exec("rm -f $filename.new $filename.log");
+    exec("rm -f $filename.log");
   }
 
   return $ret == 0;
