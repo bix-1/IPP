@@ -73,6 +73,8 @@ class Interp:
                 error("Undefined Temporary Frame", Err.UndefFrame)
             return name not in self.frames[frame]
         else:
+            if len(self.frames["LF"]) == 0:
+                error("Undefined Local Frame", Err.UndefFrame)
             return len(self.frames[frame]) == 0 or (name not in self.frames[frame][-1])
 
     def store(self, frame, name, type, val):
@@ -87,9 +89,20 @@ class Interp:
             self.frames[frame][name].set(type, val)
 
     def arithm(self, instr, op):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type1, val1 = self.symb(self.get_arg(instr, 2))
-        type2, val2 = self.symb(self.get_arg(instr, 3))
+        if op[-1] != "S":   # non-stack version
+            stack = False
+            frame, name = self.var(self.get_arg(instr, 1))
+            type1, val1 = self.symb(self.get_arg(instr, 2))
+            type2, val2 = self.symb(self.get_arg(instr, 3))
+        else:               # stack version
+            if len(self.stack) == 0:
+                error(op + ": Stack is Empty", Err.UndefVal)
+            stack = True
+            op = op[:-1]    # remove stack suffix 'S'
+            symb2 = self.stack.pop()
+            symb1 = self.stack.pop()
+            type1, val1 = symb1[0], symb1[1]
+            type2, val2 = symb2[0], symb2[1]
         if (    type1 != type2 or type1 not in {Type.INT, Type.FLOAT}
             or  type2 not in {Type.INT, Type.FLOAT}
             ):
@@ -103,41 +116,80 @@ class Interp:
             "IDIV": lambda x,y: x // y,
             "DIV": lambda x,y: x / y
         }[op](val1, val2)
-        self.store(frame, name, type1, val)
+        if not stack:
+            self.store(frame, name, type1, val)
+        else:
+            self.stack.append((type1, val))
 
     def relat(self, instr, op):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type1, val1 = self.symb(self.get_arg(instr, 2))
-        type2, val2 = self.symb(self.get_arg(instr, 3))
-        if (    (type1 == Type.NIL or type2 == Type.NIL)
-            and type1 != type2 and op != "EQ"
-            ):
-            error(op + " \"nil\" can only be compared using \"EQ\"", Err.Operands)
+        if op[-1] != "S":   # non-stack version
+            stack = False
+            frame, name = self.var(self.get_arg(instr, 1))
+            type1, val1 = self.symb(self.get_arg(instr, 2))
+            type2, val2 = self.symb(self.get_arg(instr, 3))
+        else:               # stack version
+            if len(self.stack) == 0:
+                error(op + ": Stack is Empty", Err.UndefVal)
+            stack = True
+            op = op[:-1]    # remove stack suffix 'S'
+            symb2 = self.stack.pop()
+            symb1 = self.stack.pop()
+            type1, val1 = symb1[0], symb1[1]
+            type2, val2 = symb2[0], symb2[1]
+        if (type1 == Type.NIL or type2 == Type.NIL):
+            if op != "EQ":
+                error(op + " \"nil\" can only be compared using \"EQ\"", Err.Operands)
         elif type1 != type2:
-            error(op + " : Operands must be of the same type", Err.Operands)
+            error(op + ": Operands must be of the same type", Err.Operands)
         val = {
             "LT": lambda x,y: x < y,
             "GT": lambda x,y: x > y,
             "EQ": lambda x,y: x == y
         }[op](val1, val2)
-        self.store(frame, name, Type.BOOL, val)
+        if not stack:
+            self.store(frame, name, Type.BOOL, val)
+        else:
+            self.stack.append((Type.BOOL, val))
 
     def bools(self, instr, op):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type1, val1 = self.symb(self.get_arg(instr, 2))
-        type2, val2 = self.symb(self.get_arg(instr, 3))
+        if op[-1] != "S":   # non-stack version
+            stack = False
+            frame, name = self.var(self.get_arg(instr, 1))
+            type1, val1 = self.symb(self.get_arg(instr, 2))
+            type2, val2 = self.symb(self.get_arg(instr, 3))
+        else:               # stack version
+            if len(self.stack) == 0:
+                error(op + ": Stack is Empty", Err.UndefVal)
+            stack = True
+            op = op[:-1]    # remove stack suffix 'S'
+            symb2 = self.stack.pop()
+            symb1 = self.stack.pop()
+            type1, val1 = symb1[0], symb1[1]
+            type2, val2 = symb2[0], symb2[1]
         if type1 != Type.BOOL or type2 != Type.BOOL:
             error(op + ": Both operands must be of type \"BOOL\"", Err.Operands)
         val = {
             "AND": lambda x,y: x and y,
             "OR": lambda x,y: x or y
         }[op](val1, val2)
-        self.store(frame, name, Type.BOOL, val)
+        if not stack:
+            self.store(frame, name, Type.BOOL, val)
+        else:
+            self.stack.append((Type.BOOL, val))
 
     def cond_jmp(self, instr, op):
         label = self.label(self.get_arg(instr, 1), False)
-        type1, val1 = self.symb(self.get_arg(instr, 2))
-        type2, val2 = self.symb(self.get_arg(instr, 3))
+        if op[-1] != "S":   # non-stack version
+            type1, val1 = self.symb(self.get_arg(instr, 2))
+            type2, val2 = self.symb(self.get_arg(instr, 3))
+        else:               # stack version
+            if len(self.stack) == 0:
+                error(op + ": Stack is Empty", Err.UndefVal)
+            op = op[:-1]    # remove stack suffix 'S'
+            symb2 = self.stack.pop()
+            symb1 = self.stack.pop()
+            type1, val1 = symb1[0], symb1[1]
+            type2, val2 = symb2[0], symb2[1]
         if (type1 != type2) and type1 != Type.NIL and type2 != Type.NIL:
             error("JUMPIFEQ: Invalid operands", Err.Operands)
         cond = {
@@ -148,6 +200,7 @@ class Interp:
             return self.labels[label]
 
 
+    """_____arguments_____"""
     def var(self, v):
         if v.attrib["type"] != "var":
             error("Invalid operand type -- Expected \"var\"", Err.UnexStruct);
@@ -177,6 +230,8 @@ class Interp:
                 var = self.frames[frame][name]
             else:
                 var = self.frames[frame][-1][name]
+            if var.type == Type.UNDEF:
+                error("Accessing Undefined Variable", Err.UndefVal)
             return var.type, var.val
         elif type == "nil":
             if s.text == "nil":
@@ -263,7 +318,7 @@ class Interp:
 
     def CALL(self, instr):
         try:
-            self.calls.append(int(instr.attrib["order"]) + 1)
+            self.calls.append(int(instr.attrib["order"]))
         except:
             error("CALL: Allocation Failed", 99)
         else:
@@ -271,13 +326,15 @@ class Interp:
             return self.labels[label]
 
     def RETURN(self, instr):
-        if not self.calls:
+        if len(self.calls) == 0:
             error("RETURN: Missing destination", Err.UndefVal)
         return self.calls.pop()
 
+
+    """_____data_stack_____"""
     def PUSHS(self, instr):
         if len(instr) == 0:
-            if not self.stack:
+            if len(self.stack) == 0:
                 error("PUSHS: Stack is Empty", Err.UndefVal)
             self.stack.append(self.stack[-1])
             return
@@ -294,6 +351,11 @@ class Interp:
         tmp = self.stack.pop()
         self.store(frame, name, tmp[0], tmp[1])
 
+    def CLEARS(self, instr):
+        self.stack.clear()
+
+
+    """_____arithmetic_____"""
     def ADD(self, instr):
         self.arithm(instr, "ADD")
 
@@ -309,6 +371,23 @@ class Interp:
     def DIV(self, instr):
         self.arithm(instr, "DIV")
 
+    def ADDS(self, instr):
+        self.arithm(instr, "ADDS")
+
+    def SUBS(self, instr):
+        self.arithm(instr, "SUBS")
+
+    def MULS(self, instr):
+        self.arithm(instr, "MULS")
+
+    def IDIVS(self, instr):
+        self.arithm(instr, "IDIVS")
+
+    def DIVS(self, instr):
+        self.arithm(instr, "DIVS")
+
+
+    """_____relational_____"""
     def LT(self, instr):
         self.relat(instr, "LT")
 
@@ -318,6 +397,17 @@ class Interp:
     def EQ(self, instr):
         self.relat(instr, "EQ")
 
+    def LTS(self, instr):
+        self.relat(instr, "LTS")
+
+    def GTS(self, instr):
+        self.relat(instr, "GTS")
+
+    def EQS(self, instr):
+        self.relat(instr, "EQS")
+
+
+    """_____logical_____"""
     def AND(self, instr):
         self.bools(instr, "AND")
 
@@ -331,12 +421,28 @@ class Interp:
             error("NOT: Operand must be of type \"BOOL\"", Err.Operands)
         self.store(frame, name, Type.BOOL, not val)
 
+    def ANDS(self, instr):
+        self.bools(instr, "ANDS")
+
+    def ORS(self, instr):
+        self.bools(instr, "ORS")
+
+    def NOTS(self, instr):
+        if len(self.stack) == 0:
+            error("NOTS: Stack is Empty", Err.UndefVal)
+        tmp = self.stack.pop()
+        if tmp[0] != Type.BOOL:
+            error("NOTS: Operand must be of type \"BOOL\"", Err.Operands)
+        self.stack.append((Type.BOOL, not tmp[1]))
+
+
+    """_____conversions_____"""
     def INT2CHAR(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.INT:
+            error("INT2CHAR: Invalid operands", Err.Operands)
         try:
-            if type != Type.INT:
-                raise Exception()
             c = chr(val)
         except:
             error("INT2CHAR: Invalid Unicode value", Err.Str)
@@ -348,9 +454,9 @@ class Interp:
         type2, pos = self.symb(self.get_arg(instr, 3))
         if type1 != Type.STRING or type2 != Type.INT:
             error("STRI2INT: Invalid operands", Err.Operands)
-        if pos > len(str):
+        if not (0 <= pos < len(str)):
             error("STRI2INT: Position out of range", Err.Str)
-        self.store(frame, name, Type.STRING, str[pos])
+        self.store(frame, name, Type.INT, ord(str[pos]))
 
     def INT2FLOAT(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
@@ -365,6 +471,48 @@ class Interp:
         if type != Type.FLOAT:
             error("FLOAT2INT: Invalid operands", Err.Operands)
         self.store(frame, name, Type.INT, int(val))
+
+    def INT2CHARS(self, instr):
+        if len(self.stack) == 0:
+            error("INT2CHARS: Stack is Empty", Err.UndefVal)
+        tmp = self.stack.pop()
+        if tmp[0] != Type.INT:
+            error("INT2CHARS: Invalid operads", Err.Operands)
+        try:
+            c = chr(tmp[1])
+        except:
+            error("INT2CHARS: Invalid Unicode value", Err.Str)
+        self.stack.append((Type.STRING, c))
+
+    def STRI2INTS(self, instr):
+        if len(self.stack) == 0:
+            error("STRI2INTS: Stack is Empty", Err.UndefVal)
+        tmp2 = self.stack.pop()
+        tmp1 = self.stack.pop()
+        type1, str = tmp1[0], tmp1[1]
+        type2, pos = tmp2[0], tmp2[1]
+        if type1 != Type.STRING or type2 != Type.INT:
+            error("STRI2INTS: Invalid operands", Err.Operands)
+        if not (0 <= pos < len(str)):
+            error("STRI2INTS: Position out of range", Err.Str)
+        self.stack.append((Type.INT, ord(str[pos])))
+
+    def INT2FLOATS(self, instr):
+        if len(self.stack) == 0:
+            error("INT2FLOATS: Stack is Empty", Err.UndefVal)
+        tmp = self.stack.pop()
+        if tmp[0] != Type.INT:
+            error("INT2FLOATS: Invalid operands", Err.Operands)
+        self.stack.append((Type.FLOAT, float(tmp[1])))
+
+    def FLOAT2INTS(self, instr):
+        if len(self.stack) == 0:
+            error("FLOAT2INTS: Stack is Empty", Err.UndefVal)
+        tmp = self.stack.pop()
+        if tmp[0] != Type.FLOAT:
+            error("FLOAT2INTS: Invalid operands", Err.Operands)
+        self.stack.append((Type.INT, int(tmp[1])))
+
 
     def READ(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
@@ -421,20 +569,20 @@ class Interp:
         type2, pos = self.symb(self.get_arg(instr, 3))
         if type1 != Type.STRING or type2 != Type.INT:
             error("GETCHAR: Operands must be of types \"STRING\" & \"INT\"", Err.Operands)
-        if pos > len(str):
+        if not (0 <= pos < len(str)):
             error("GETCHAR: Position out of range", Err.Str)
         self.store(frame, name, Type.STRING, str[pos])
 
     def SETCHAR(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
-        type0, src = self.var(self.get_arg(instr, 1))
+        type0, src = self.symb(self.get_arg(instr, 1))
         type1, pos = self.symb(self.get_arg(instr, 2))
         type2, str = self.symb(self.get_arg(instr, 3))
         if (    type0 != Type.STRING
             or  type1 != Type.INT or type2 != Type.STRING
             ):
             error("SETCHAR: Invalid operand types", Err.Operands)
-        if pos > len(src) or not str:
+        if not (0 <= pos < len(src)) or not str:
             error("SETCHAR: Position out of range", Err.Str)
         self.store(frame, name, Type.STRING, src[:pos] + str[0] + src[pos+1:])
 
@@ -468,6 +616,12 @@ class Interp:
     def JUMPIFNEQ(self, instr):
         return self.cond_jmp(instr, "NEQ")
 
+    def JUMPIFEQS(self, instr):
+        return self.cond_jmp(instr, "EQS")
+
+    def JUMPIFNEQS(self, instr):
+        return self.cond_jmp(instr, "NEQS")
+
     def EXIT(self, instr):
         type, val = self.symb(self.get_arg(instr, 1))
         if type != Type.INT:
@@ -488,20 +642,20 @@ class Interp:
 
         print("[LF]:", file=sys.stderr)
         for i in range(len(self.frames["LF"])):
-            print("\t{")
+            print("\t{", file=sys.stderr)
             for var in self.frames["LF"][i]:
                 print("\t    (" + self.frames["LF"][i][var].type.name + ")\t", var, "= [" + str(self.frames["LF"][i][var].val) + "]", file=sys.stderr)
-            print("\t}")
+            print("\t}", file=sys.stderr)
 
         print("[TF]:", file=sys.stderr)
         if self.frames["TF"] != Type.UNDEF:
             for var in self.frames["TF"]:
                 print("\t(" + self.frames["TF"][var].type.name + ")\t", var, "= [" + str(self.frames["TF"][var].val) + "]", file=sys.stderr)
 
-        print("[STACK]:")
+        print("[STACK]:", file=sys.stderr)
         for val in self.stack:
-            print("\t(" + val[0].name + ")", str(val[1]))
-        print("\n")
+            print("\t(" + val[0].name + ")", str(val[1]), file=sys.stderr)
+        print("\n", file=sys.stderr)
 
 
     # list of valid instructions in format:
@@ -510,17 +664,25 @@ class Interp:
         "MOVE": (MOVE, 2),
         "CREATEFRAME": (CREATEFRAME, 0), "PUSHFRAME": (PUSHFRAME, 0),
         "POPFRAME": (POPFRAME, 0), "DEFVAR": (DEFVAR, 1),
-        "CALL": (CALL, 1), "RETURN": (RETURN, 0), "PUSHS": (PUSHS, 1),
-        "POPS": (POPS, 1), "ADD": (ADD, 3), "SUB": (SUB, 3),
-        "MUL": (MUL, 3), "IDIV": (IDIV, 3), "DIV": (DIV, 3),
+        "CALL": (CALL, 1), "RETURN": (RETURN, 0),
+        "PUSHS": (PUSHS, 1), "POPS": (POPS, 1), "CLEARS": (CLEARS, 0),
+        "ADD": (ADD, 3), "SUB": (SUB, 3), "MUL": (MUL, 3),
+        "IDIV": (IDIV, 3), "DIV": (DIV, 3),
+        "ADDS": (ADDS, 0), "SUBS": (SUBS, 0), "MULS": (MULS, 0),
+        "IDIVS": (IDIVS, 0), "DIVS": (DIVS, 0),
         "LT": (LT, 3), "GT": (GT, 3), "EQ": (EQ, 3),
+        "LTS": (LTS, 0), "GTS": (GTS, 0), "EQS": (EQS, 0),
         "AND": (AND, 3), "OR": (OR, 3), "NOT": (NOT, 2),
+        "ANDS": (ANDS, 0), "ORS": (ORS, 0), "NOTS": (NOTS, 0),
         "INT2CHAR": (INT2CHAR, 2), "STRI2INT": (STRI2INT, 3),
         "INT2FLOAT": (INT2FLOAT, 2), "FLOAT2INT": (FLOAT2INT, 2),
+        "INT2CHARS": (INT2CHARS, 0), "STRI2INTS": (STRI2INTS, 0),
+        "INT2FLOATS": (INT2FLOATS, 0), "FLOAT2INTS": (FLOAT2INTS, 0),
         "READ": (READ, 2), "WRITE": (WRITE, 1), "CONCAT": (CONCAT, 3),
         "STRLEN": (STRLEN, 2), "GETCHAR": (GETCHAR, 3),
         "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (lambda *args: None, 1),
         "JUMP": (JUMP, 1), "JUMPIFEQ": (JUMPIFEQ, 3), "JUMPIFNEQ": (JUMPIFNEQ, 3),
+        "JUMPIFEQS": (JUMPIFEQS, 1), "JUMPIFNEQS": (JUMPIFNEQS, 1),
         "EXIT": (EXIT, 1), "DPRINT": (DPRINT, 1), "BREAK": (BREAK, 0)
     }
 
@@ -558,7 +720,7 @@ class Interp:
 
 def get_args():
     # define CL arguments
-    aparser = argparse.ArgumentParser(description="Interpret XML representation of IPPcode21 & generate outputs.")
+    aparser = argparse.ArgumentParser(description="Interprets XML representation of IPPcode21 & generates outputs.")
     aparser.add_argument(
         "-s",
         "--source",
@@ -575,7 +737,7 @@ def get_args():
     # parse CL arguments
     args = aparser.parse_args()
     if not (args.source or args.input):
-        error("At least one of --source, --input needs to be specified", 10)
+        error("At least one of --source, --input needs to be specified", Err.Parameter)
     if args.source:
         try:
             tmp = open(args.source)
@@ -611,6 +773,9 @@ def main():
        ):
         error("Invalid root element", Err.UnexStruct)
 
+    if len(root) == 0:
+        sys.exit(0)
+
     # sort instructions by [attribute] order
     try:
         root[:] = sorted(root, key=lambda x: int(x.attrib["order"]))
@@ -635,7 +800,7 @@ def main():
     while i < N:
         jmp = interp.run(root[i])   # check for jump dest
         # assign jmp destination OR next instruction
-        i = i + 1 if not jmp else 1 + next((j for j in range(len(root)) if root[j].attrib["order"] == jmp), N)
+        i = i + 1 if not jmp else 1 + next((j for j in range(len(root)) if int(root[j].attrib["order"]) == int(jmp)), N)
 
     sys.stdin.close()
 
