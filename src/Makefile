@@ -18,6 +18,14 @@ check:	pack
 	bash is_it_ok.sh $(LOGIN).zip testDir/ 2:
 	rm -rf testDir/
 
+test:
+	@echo "<h1>Parser Only</h1>" >x.html
+	./test.php --directory=../tests/parse-only/ --recursive --parse-only >>x.html
+	@echo "<h1>Interpret Only</h1>" >>x.html
+	./test.php --directory=../tests/interpret-only/ --recursive --int-only >>x.html
+	@echo "<h1>Both</h1>" >>x.html
+	./test.php --directory=../tests/both/ --recursive >>x.html
+
 clean:
 	rm -f *.zip
 	rm -rf testDir/
