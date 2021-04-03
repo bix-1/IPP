@@ -1,3 +1,4 @@
+#!/usr/bin/env php7.4
 <?php
 /*
  * File: parse.php
