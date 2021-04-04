@@ -801,7 +801,7 @@ def get_args():
         action="store_true",
         help="max number of simultaneously initialized variables")
 
-    if "--help" in sys.argv or "-h" in sys.argv and len(sys.argv) > 2:
+    if ("--help" in sys.argv or "-h" in sys.argv) and len(sys.argv) > 2:
         error("--help cannot be combined with other options", Err.Parameter)
 
     # parse CL arguments
