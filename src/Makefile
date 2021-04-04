@@ -33,4 +33,4 @@ test:
 	./test.php --directory=../tests/both/ --recursive >>x.html
 
 clean:
-	rm -rf testDir/ *.zip .log
+	rm -rf testDir/ *.zip *.log *.out *.pdf *.aux *.html
