@@ -8,9 +8,6 @@
 # Authors: Jakub Bartko    xbartk07@stud.fit.vutbr.cz
 
 
-# TODO:
-#   TF, frames
-
 import sys
 import argparse
 import xml.etree.ElementTree as ET
@@ -18,11 +15,12 @@ from enum import Enum
 import re
 
 def error(msg, code):
+    """Prints message to STDERR & exits with given code"""
     print("ERROR: " + msg, file=sys.stderr)
     sys.exit(code.value)
 
-
 class Err(Enum):
+    """Error codes Enumerator"""
     Parameter = 10
     FileIn = 11
     FileOut = 12
@@ -35,27 +33,41 @@ class Err(Enum):
     UndefVal = 56
     InvVal = 57
     Str = 58
+    Internal = 99
+
+"""Variable type Enumerator"""
 Type = Enum("Type", "UNDEF INT BOOL STRING FLOAT NIL")
 
 class Var:
+    """Represents Value & Type of single variable"""
+    # counters for --stats
+    cnt = 0
+    max = 0
+
     def __init__(self):
         self.type = Type.UNDEF
         self.val = Type.UNDEF
 
+    def __del__(self):
+        Var.cnt -= 1
+
     def set(self, type, value):
-        # TODO del??
-        # if self.type != Type.UNDEF and type != Type.UNDEF and type != self.type:
-        #     error("Incompatible variable types", Err.Semantics)
-        if type == Type.UNDEF and self.type != Type.UNDEF:
-            pass
+        if self.type == Type.UNDEF:
+            Var.cnt += 1
+            Var.max = max(Var.cnt, Var.max)
         self.type = type
         self.val = value
 
 class Interp:
-    cnt = 0
-    vars = 0
-    vars_max = 0
-    hots = {}
+    """Represents internal functionality of interpret
+    Contains methods for:
+        argument & instruction validation,
+        instruction execution,
+        handling frames & data stack,
+        program flow control,
+        collection of code statistics
+
+    """
     frames = {
         "GF": {},
         "LF": [],
@@ -64,6 +76,15 @@ class Interp:
     labels = {}
     calls = []
     stack = []
+    # stats
+    cnt = 0
+    hots = {}
+    stats = []
+    stats_file = ""
+
+    def __init__(self, stats, file):
+        self.stats = stats
+        self.stats_file = file
 
     def get_arg(self, instr, n):
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
@@ -202,6 +223,18 @@ class Interp:
         if cond:
             return self.labels[label]
 
+    def stats_out(self):
+        try:
+            with open(self.stats_file, "w") as file:
+                for s in self.stats:
+                    val = {
+                        "insts": self.cnt,
+                        "hot": max(self.hots, key=self.hots.get),
+                        "vars": Var().max
+                    }[s]
+                    file.write(str(val) + "\n")
+        except:
+            error("Failed to open file for stats output", Err.Parameter)
 
     """_____arguments_____"""
     def var(self, v):
@@ -323,7 +356,7 @@ class Interp:
         try:
             self.calls.append(int(instr.attrib["order"]))
         except:
-            error("CALL: Allocation Failed", 99)
+            error("CALL: Allocation Failed", Err.Internal)
         else:
             label = self.label(self.get_arg(instr, 1), False)
             return self.labels[label]
@@ -631,11 +664,8 @@ class Interp:
             error("EXIT: Invalid operand", Err.Operands)
         if not (0 <= val <= 49):
             error("EXIT: Invalid exit value", Err.InvVal)
-
-        print(interp.cnt)
-        print(max(interp.hots, key=interp.hots.get))
-        print(interp.vars_max)
-
+        if self.stats:
+            self.stats_out()
         sys.exit(val)
 
     def DPRINT(self, instr):
@@ -700,15 +730,10 @@ class Interp:
         """
         opcode = instr.attrib["opcode"].upper()
         order = instr.attrib["order"]
-        # NOTE unoptimized
-        self.vars = (len([v for v in self.frames["GF"] if v[0] != Type.UNDEF])
-            +   len([v for v in self.frames["TF"] if v[0] != Type.UNDEF]) if self.frames["TF"] != Type.UNDEF else 0
-            +   len([var for frame in self.frames["LF"] for var in frame if var[0] != Type.UNDEF]))
-        self.vars_max = max(self.vars, self.vars_max)
-
         if opcode not in {"LABEL", "DPRINT", "BREAK"}:
             self.cnt += 1
-        self.hots[order] = self.hots.get(order, 0) + 1
+            self.hots[order] = self.hots.get(order, 0) + 1
+
         return self.instrs[opcode][0](self, instr)
 
     def check(self, instr):
@@ -808,31 +833,33 @@ def get_args():
     return args.source, stats, args.stats
 
 
-interp = Interp()
-src, stats, stats_file = get_args()
-
 def main():
-    # get source code in XML tree
+    """SETUP"""
+    src, stats, stats_file = get_args()
+    interp = Interp(stats, stats_file)
+    # get source code as XML tree
     try:
         root = ET.parse(src).getroot()
     except ET.ParseError:
         error("XML input is not well-formed", Err.WellFormed)
 
+    """VALIDATION"""
     # validate root
     if (    root.tag != "program"
         or  "language" not in root.attrib
-        or  root.attrib["language"].lower() != "ippcode21"
+        or  root.attrib["language"].upper() != "IPPCODE21"
         or  not all(a in {"language", "name", "description"} for a in root.attrib)
        ):
         error("Invalid root element", Err.UnexStruct)
-
+    # skip if empty
     if len(root) == 0:
         sys.exit(0)
 
-    # sort instructions by [attribute] order
+    # validate order of instructions
     try:
+        # sort instructions by order
         root[:] = sorted(root, key=lambda x: int(x.attrib["order"]))
-        # validate all positive & no duplicates
+        # all positive & no duplicates
         if (    int(root[0].attrib["order"]) < 1
             or  len(root) != len(set([x.attrib["order"] for x in root]))
            ):
@@ -842,7 +869,7 @@ def main():
     except ValueError:
         error("Instruction's attribute \"order\" has invalid value", Err.UnexStruct)
 
-    # handle instr validation & labels
+    # validate instructions & set up labels
     for child in root:
         interp.check(child)
         if child.attrib["opcode"] == "LABEL":
@@ -855,6 +882,8 @@ def main():
         # assign jmp destination OR next instruction
         i = i + 1 if not jmp else 1 + next((j for j in range(len(root)) if int(root[j].attrib["order"]) == int(jmp)), N)
 
+    if interp.stats:
+        interp.stats_out()
     sys.stdin.close()
 
 if __name__ == "__main__":
