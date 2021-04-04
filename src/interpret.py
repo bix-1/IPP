@@ -8,11 +8,11 @@
 # Authors: Jakub Bartko    xbartk07@stud.fit.vutbr.cz
 
 
-import sys
-import argparse
-import xml.etree.ElementTree as ET
-from enum import Enum
-import re
+import sys                          # exits, STDIN, STDERR
+import argparse                     # CL options
+import xml.etree.ElementTree as ET  # XML parsing
+from enum import Enum               # enumerators
+import re                           # regex
 
 def error(msg, code):
     """Prints message to STDERR & exits with given code"""
@@ -66,7 +66,6 @@ class Interp:
         handling frames & data stack,
         program flow control,
         collection of code statistics
-
     """
     frames = {
         "GF": {},
@@ -85,6 +84,47 @@ class Interp:
     def __init__(self, stats, file):
         self.stats = stats
         self.stats_file = file
+
+    """_____control_____"""
+    def check(self, instr):
+        """Validates instruction
+        Specific instruction arguments are validated by execution methods
+        """
+        # validate tag
+        if instr.tag != "instruction":
+            error("Invalid instruction tag", Err.UnexStruct)
+        # validate attributes
+        if (    len(instr.attrib) != 2
+            or  any(a not in {"order", "opcode"} for a in instr.attrib)
+            ):
+            error("Invalid attributes", Err.UnexStruct)
+        # validate opcode
+        opcode = instr.attrib["opcode"].upper()
+        if opcode.upper() not in self.instrs:
+            error("Invalid opcode \"" + str(opcode) + "\"", Err.UnexStruct)
+
+        # validate ammount of args
+        if len(instr) != self.instrs[opcode][1] and opcode not in {"PUSHS", "POPS"}:
+            error("Invalid number of arguments for \"" + opcode + "\"", Err.UnexStruct)
+        # validate format of args
+        if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
+            or  any(not arg.attrib for arg in instr)
+            or  any(not arg.attrib or attr != "type" for arg in instr for attr in arg.attrib)
+            ):
+            error("Invalid instruction argument", Err.UnexStruct)
+
+    def run(self, instr):
+        """Call function from list of instructions
+        Return order_n of jmp destination in case of jmp instruction
+        """
+        opcode = instr.attrib["opcode"].upper()
+        order = instr.attrib["order"]
+        # update stats
+        if opcode not in {"LABEL", "DPRINT", "BREAK"}:
+            self.cnt += 1
+            self.hots[order] = self.hots.get(order, 0) + 1
+
+        return self.instrs[opcode][0](self, instr)
 
     def get_arg(self, instr, n):
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
@@ -320,12 +360,41 @@ class Interp:
             "float": Type.FLOAT,
         }[t.text]
 
-
+    """_____variables_____"""
     def MOVE(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         type, val = self.symb(self.get_arg(instr, 2))
         self.store(frame, name, type, val)
 
+    def DEFVAR(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        if not self.is_unique(frame, name):
+            error("DEFVAR: Variable already defined", Err.Semantics)
+        if frame == "GF" or frame == "TF":
+            self.frames[frame][name] = Var()
+        else:
+            try:
+                self.frames[frame][-1][name] = Var()
+            except:
+                error("DEFVAR: Missing Local Frame", Err.UndefFrame)
+
+    def TYPE(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        elem = self.get_arg(instr, 2)
+        type = elem.attrib["type"]
+        if type == "var":
+            fr, nm = self.var(elem)
+            if self.is_unique(fr, nm):
+                error("Variable undefined", Err.UndefVar)
+            elif fr in {"GF", "TF"}:
+                str_type = self.frames[fr][nm].type.name
+            else:
+                str_type = self.frames[fr][-1][nm].type.name
+            self.store(frame, name, Type.STRING, str_type.lower() if str_type != "UNDEF" else "")
+        else:
+            self.store(frame, name, Type.STRING, type)
+
+    """_____frames_____"""
     def CREATEFRAME(self, instr):
         self.frames["TF"] = {}
 
@@ -340,17 +409,10 @@ class Interp:
             error("POPFRAME: Missing Local Frame", Err.UndefFrame)
         self.frames["TF"] = self.frames["LF"].pop()
 
-    def DEFVAR(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        if not self.is_unique(frame, name):
-            error("DEFVAR: Variable already defined", Err.Semantics)
-        if frame == "GF" or frame == "TF":
-            self.frames[frame][name] = Var()
-        else:
-            try:
-                self.frames[frame][-1][name] = Var()
-            except:
-                error("DEFVAR: Missing Local Frame", Err.UndefFrame)
+    """_____flow_control_____"""
+    def LABEL(self, instr):
+        label = self.label(self.get_arg(instr, 1), True)
+        self.labels[label] = instr.attrib["order"]
 
     def CALL(self, instr):
         try:
@@ -366,6 +428,31 @@ class Interp:
             error("RETURN: Missing destination", Err.UndefVal)
         return self.calls.pop()
 
+    def JUMP(self, instr):
+        label = self.label(self.get_arg(instr, 1), False)
+        return self.labels[label]
+
+    def JUMPIFEQ(self, instr):
+        return self.cond_jmp(instr, "EQ")
+
+    def JUMPIFNEQ(self, instr):
+        return self.cond_jmp(instr, "NEQ")
+
+    def JUMPIFEQS(self, instr):
+        return self.cond_jmp(instr, "EQS")
+
+    def JUMPIFNEQS(self, instr):
+        return self.cond_jmp(instr, "NEQS")
+
+    def EXIT(self, instr):
+        type, val = self.symb(self.get_arg(instr, 1))
+        if type != Type.INT:
+            error("EXIT: Invalid operand", Err.Operands)
+        if not (0 <= val <= 49):
+            error("EXIT: Invalid exit value", Err.InvVal)
+        if self.stats:
+            self.stats_out()
+        sys.exit(val)
 
     """_____data_stack_____"""
     def PUSHS(self, instr):
@@ -389,7 +476,6 @@ class Interp:
 
     def CLEARS(self, instr):
         self.stack.clear()
-
 
     """_____arithmetic_____"""
     def ADD(self, instr):
@@ -422,7 +508,6 @@ class Interp:
     def DIVS(self, instr):
         self.arithm(instr, "DIVS")
 
-
     """_____relational_____"""
     def LT(self, instr):
         self.relat(instr, "LT")
@@ -441,7 +526,6 @@ class Interp:
 
     def EQS(self, instr):
         self.relat(instr, "EQS")
-
 
     """_____logical_____"""
     def AND(self, instr):
@@ -471,6 +555,49 @@ class Interp:
             error("NOTS: Operand must be of type \"BOOL\"", Err.Operands)
         self.stack.append((Type.BOOL, not tmp[1]))
 
+    """_____strings_____"""
+    def CONCAT(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type1, val1 = self.symb(self.get_arg(instr, 2))
+        type2, val2 = self.symb(self.get_arg(instr, 3))
+        val1 = "" if val1 == Type.UNDEF else val1
+        val2 = "" if val2 == Type.UNDEF else val2
+        if (
+                type1 not in {Type.UNDEF, Type.STRING}
+            or  type2 not in {Type.UNDEF, Type.STRING}
+            ):
+            error("CONCAT: Both operands must be of type \"STRING\"", Err.Operands)
+        self.store(frame, name, Type.STRING, val1 + val2)
+
+    def STRLEN(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.STRING:
+            error("STRLEN: Operand must be of type \"STRING\"", Err.Operands)
+        self.store(frame, name, Type.INT, len(val))
+
+    def GETCHAR(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type1, str = self.symb(self.get_arg(instr, 2))
+        type2, pos = self.symb(self.get_arg(instr, 3))
+        if type1 != Type.STRING or type2 != Type.INT:
+            error("GETCHAR: Operands must be of types \"STRING\" & \"INT\"", Err.Operands)
+        if not (0 <= pos < len(str)):
+            error("GETCHAR: Position out of range", Err.Str)
+        self.store(frame, name, Type.STRING, str[pos])
+
+    def SETCHAR(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type0, src = self.symb(self.get_arg(instr, 1))
+        type1, pos = self.symb(self.get_arg(instr, 2))
+        type2, str = self.symb(self.get_arg(instr, 3))
+        if (    type0 != Type.STRING
+            or  type1 != Type.INT or type2 != Type.STRING
+            ):
+            error("SETCHAR: Invalid operand types", Err.Operands)
+        if not (0 <= pos < len(src)) or not str:
+            error("SETCHAR: Position out of range", Err.Str)
+        self.store(frame, name, Type.STRING, src[:pos] + str[0] + src[pos+1:])
 
     """_____conversions_____"""
     def INT2CHAR(self, instr):
@@ -549,7 +676,7 @@ class Interp:
             error("FLOAT2INTS: Invalid operands", Err.Operands)
         self.stack.append((Type.INT, int(tmp[1])))
 
-
+    """_____input/output_____"""
     def READ(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         type = self.type(self.get_arg(instr, 2))
@@ -579,95 +706,7 @@ class Interp:
         }[type](val)
         print(str, end="")
 
-    def CONCAT(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type1, val1 = self.symb(self.get_arg(instr, 2))
-        type2, val2 = self.symb(self.get_arg(instr, 3))
-        val1 = "" if val1 == Type.UNDEF else val1
-        val2 = "" if val2 == Type.UNDEF else val2
-        if (
-                type1 not in {Type.UNDEF, Type.STRING}
-            or  type2 not in {Type.UNDEF, Type.STRING}
-            ):
-            error("CONCAT: Both operands must be of type \"STRING\"", Err.Operands)
-        self.store(frame, name, Type.STRING, val1 + val2)
-
-    def STRLEN(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type, val = self.symb(self.get_arg(instr, 2))
-        if type != Type.STRING:
-            error("STRLEN: Operand must be of type \"STRING\"", Err.Operands)
-        self.store(frame, name, Type.INT, len(val))
-
-    def GETCHAR(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type1, str = self.symb(self.get_arg(instr, 2))
-        type2, pos = self.symb(self.get_arg(instr, 3))
-        if type1 != Type.STRING or type2 != Type.INT:
-            error("GETCHAR: Operands must be of types \"STRING\" & \"INT\"", Err.Operands)
-        if not (0 <= pos < len(str)):
-            error("GETCHAR: Position out of range", Err.Str)
-        self.store(frame, name, Type.STRING, str[pos])
-
-    def SETCHAR(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type0, src = self.symb(self.get_arg(instr, 1))
-        type1, pos = self.symb(self.get_arg(instr, 2))
-        type2, str = self.symb(self.get_arg(instr, 3))
-        if (    type0 != Type.STRING
-            or  type1 != Type.INT or type2 != Type.STRING
-            ):
-            error("SETCHAR: Invalid operand types", Err.Operands)
-        if not (0 <= pos < len(src)) or not str:
-            error("SETCHAR: Position out of range", Err.Str)
-        self.store(frame, name, Type.STRING, src[:pos] + str[0] + src[pos+1:])
-
-    def TYPE(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        elem = self.get_arg(instr, 2)
-        type = elem.attrib["type"]
-        if type == "var":
-            fr, nm = self.var(elem)
-            if self.is_unique(fr, nm):
-                error("Variable undefined", Err.UndefVar)
-            elif fr in {"GF", "TF"}:
-                str_type = self.frames[fr][nm].type.name
-            else:
-                str_type = self.frames[fr][-1][nm].type.name
-            self.store(frame, name, Type.STRING, str_type.lower() if str_type != "UNDEF" else "")
-        else:
-            self.store(frame, name, Type.STRING, type)
-
-    def LABEL(self, instr):
-        label = self.label(self.get_arg(instr, 1), True)
-        self.labels[label] = instr.attrib["order"]
-
-    def JUMP(self, instr):
-        label = self.label(self.get_arg(instr, 1), False)
-        return self.labels[label]
-
-    def JUMPIFEQ(self, instr):
-        return self.cond_jmp(instr, "EQ")
-
-    def JUMPIFNEQ(self, instr):
-        return self.cond_jmp(instr, "NEQ")
-
-    def JUMPIFEQS(self, instr):
-        return self.cond_jmp(instr, "EQS")
-
-    def JUMPIFNEQS(self, instr):
-        return self.cond_jmp(instr, "NEQS")
-
-    def EXIT(self, instr):
-        type, val = self.symb(self.get_arg(instr, 1))
-        if type != Type.INT:
-            error("EXIT: Invalid operand", Err.Operands)
-        if not (0 <= val <= 49):
-            error("EXIT: Invalid exit value", Err.InvVal)
-        if self.stats:
-            self.stats_out()
-        sys.exit(val)
-
+    """_____debugging_____"""
     def DPRINT(self, instr):
         _, val = self.symb(self.get_arg(instr, 1))
         print(val, file=sys.stderr)
@@ -695,14 +734,12 @@ class Interp:
             print("\t(" + val[0].name + ")", str(val[1]), file=sys.stderr)
         print("\n", file=sys.stderr)
 
-
     # list of valid instructions in format:
-    #   "OPCODE" : [run_func, "arg1", "arg2", "arg3"]
+    #   "OPCODE" : [exec_func, n_args]
     instrs = {
-        "MOVE": (MOVE, 2),
+        "MOVE": (MOVE, 2), "DEFVAR": (DEFVAR, 1),
         "CREATEFRAME": (CREATEFRAME, 0), "PUSHFRAME": (PUSHFRAME, 0),
-        "POPFRAME": (POPFRAME, 0), "DEFVAR": (DEFVAR, 1),
-        "CALL": (CALL, 1), "RETURN": (RETURN, 0),
+        "POPFRAME": (POPFRAME, 0), "CALL": (CALL, 1), "RETURN": (RETURN, 0),
         "PUSHS": (PUSHS, 1), "POPS": (POPS, 1), "CLEARS": (CLEARS, 0),
         "ADD": (ADD, 3), "SUB": (SUB, 3), "MUL": (MUL, 3),
         "IDIV": (IDIV, 3), "DIV": (DIV, 3),
@@ -724,44 +761,11 @@ class Interp:
         "EXIT": (EXIT, 1), "DPRINT": (DPRINT, 1), "BREAK": (BREAK, 0)
     }
 
-    def run(self, instr):
-        """call func from list of instructions
-        Return order_n of jmp destination in case of jmp instruction
-        """
-        opcode = instr.attrib["opcode"].upper()
-        order = instr.attrib["order"]
-        if opcode not in {"LABEL", "DPRINT", "BREAK"}:
-            self.cnt += 1
-            self.hots[order] = self.hots.get(order, 0) + 1
-
-        return self.instrs[opcode][0](self, instr)
-
-    def check(self, instr):
-        # validate tag
-        if instr.tag != "instruction":
-            error("Invalid instruction tag", Err.UnexStruct)
-        # validate attributes
-        if (    len(instr.attrib) != 2
-            or  any(a not in {"order", "opcode"} for a in instr.attrib)
-            ):
-            error("Invalid attributes", Err.UnexStruct)
-
-        opcode = instr.attrib["opcode"].upper()
-        if opcode.upper() not in self.instrs:
-            error("Invalid opcode \"" + str(opcode) + "\"", Err.UnexStruct)
-
-        # validate ammount of args
-        if len(instr) != self.instrs[opcode][1] and opcode not in {"PUSHS", "POPS"}:
-            error("Invalid number of arguments for \"" + opcode + "\"", Err.UnexStruct)
-        # validate format of args
-        if (    any("arg" + str(i+1) not in [arg.tag for arg in instr] for i in range(0, len(instr)))
-            or  any(not arg.attrib for arg in instr)
-            or  any(not arg.attrib or attr != "type" for arg in instr for attr in arg.attrib)
-            ):
-            error("Invalid instruction argument", Err.UnexStruct)
-
 
 def get_args():
+    """Returns source file, stats options & output file
+    Redirects intput stream to STDIN
+    """
     # define CL arguments
     aparser = argparse.ArgumentParser(description="Interprets XML representation of IPPcode21 & generates outputs.")
     aparser.add_argument(
@@ -797,15 +801,13 @@ def get_args():
         action="store_true",
         help="max number of simultaneously initialized variables")
 
-
-
-
     if "--help" in sys.argv or "-h" in sys.argv and len(sys.argv) > 2:
         error("--help cannot be combined with other options", Err.Parameter)
 
     # parse CL arguments
     args = aparser.parse_args()
 
+    # get source & input files
     if not (args.source or args.input):
         error("At least one of --source, --input needs to be specified", Err.Parameter)
     if args.source:
@@ -813,6 +815,8 @@ def get_args():
             tmp = open(args.source)
         except:
             error("Invalid source file", Err.FileIn)
+        else:
+            tmp.close()
     else:
         args.source = sys.stdin
     # redirect specified input to STDIN
@@ -822,9 +826,9 @@ def get_args():
         except:
             error("Invalid input file", Err.FileIn)
 
+    # get stats options
     if any([args.insts, args.hot, args.vars]) and not args.stats:
         error("Stats options missing --stats", Err.Parameter)
-
     if args.stats:
         stats = [s[2:] for s in sys.argv if s in {"--insts", "--hot", "--vars"}]
     else:
@@ -875,15 +879,18 @@ def main():
         if child.attrib["opcode"] == "LABEL":
             interp.LABEL(child)
 
+    """EXECUTION"""
     i = 0
     N = len(root)
-    while i < N:
-        jmp = interp.run(root[i])   # check for jump dest
-        # assign jmp destination OR next instruction
+    while i < N:    # iterate instructions
+        jmp = interp.run(root[i])   # check for jump
+        # assign following instruction OR jump destination
         i = i + 1 if not jmp else 1 + next((j for j in range(len(root)) if int(root[j].attrib["order"]) == int(jmp)), N)
 
+    # stats output
     if interp.stats:
         interp.stats_out()
+
     sys.stdin.close()
 
 if __name__ == "__main__":
