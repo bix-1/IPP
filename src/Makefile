@@ -8,9 +8,15 @@ DOC = readme1.pdf readme2.pdf
 
 .PHONY: pack clean
 
-pack:	clean
+pack:	clean doc
 	zip $(LOGIN).zip $(SCRIPTS) rozsireni
 	cd ../doc/ && zip ../src/$(LOGIN).zip $(DOC)
+
+doc:
+	pdflatex ../doc/readme1.tex
+	pdflatex ../doc/readme1.tex
+	pdflatex ../doc/readme2.tex
+	pdflatex ../doc/readme2.tex
 
 check:	pack
 	mkdir testDir/
