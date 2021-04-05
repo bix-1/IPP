@@ -58,7 +58,7 @@ class Var:
         self.type = type
         self.val = value
 
-class Interp:
+class Interpret:
     """Represents internal functionality of interpret
     Contains methods for:
         argument & instruction validation,
@@ -124,7 +124,17 @@ class Interp:
             self.cnt += 1
             self.hots[order] = self.hots.get(order, 0) + 1
 
-        return self.instrs[opcode][0](self, instr)
+        # operation functions require additional parameter
+        if opcode in {
+                "ADD", "SUB", "MUL", "IDIV", "DIV", "ADDS", "SUBS",
+                "MULS", "IDIVS", "DIVS", "LT", "GT", "EQ", "LTS",
+                "GTS", "EQS", "AND", "OR", "ANDS", "ORS",
+            }:
+            args = self, instr, opcode
+        else:
+            args = self, instr
+
+        return self.instrs[opcode][0](*args)
 
     def get_arg(self, instr, n):
         return next(arg for arg in instr if arg.tag == "arg" + str(n))
@@ -152,7 +162,8 @@ class Interp:
         else:
             self.frames[frame][name].set(type, val)
 
-    def arithm(self, instr, op):
+    def operations(self, instr, op):
+        # get arguments
         if op[-1] != "S":   # non-stack version
             stack = False
             frame, name = self.var(self.get_arg(instr, 1))
@@ -167,79 +178,51 @@ class Interp:
             symb1 = self.stack.pop()
             type1, val1 = symb1[0], symb1[1]
             type2, val2 = symb2[0], symb2[1]
-        if (    type1 != type2 or type1 not in {Type.INT, Type.FLOAT}
-            or  type2 not in {Type.INT, Type.FLOAT}
-            ):
-            error(op + ": Operand types not matching", Err.Operands)
-        if op in {"IDIV", "DIV"} and val2 == 0:
-            error("IDIV/DIV: Zero division", Err.InvVal)
-        val = {
+
+        # validate
+        if op in {"ADD", "SUB", "MUL", "IDIV", "DIV"}:
+            if (    type1 != type2 or type1 not in {Type.INT, Type.FLOAT}
+                or  type2 not in {Type.INT, Type.FLOAT}
+                ):
+                error(op + ": Operand types not matching", Err.Operands)
+            if op in {"IDIV", "DIV"} and val2 == 0:
+                error("IDIV/DIV: Zero division", Err.InvVal)
+        elif op in {"LT", "GT", "EQ"}:
+            if (type1 == Type.NIL or type2 == Type.NIL):
+                if op != "EQ":
+                    error(op + " \"nil\" can only be compared using \"EQ\"", Err.Operands)
+            elif type1 != type2:
+                error(op + ": Operands must be of the same type", Err.Operands)
+        elif op in {"AND", "OR"}:
+            if type1 != Type.BOOL or type2 != Type.BOOL:
+                error(op + ": Both operands must be of type \"BOOL\"", Err.Operands)
+
+        # get result
+        res = {
+            # arithmetic
             "ADD":  lambda x,y: x + y,
             "SUB":  lambda x,y: x - y,
             "MUL":  lambda x,y: x * y,
             "IDIV": lambda x,y: x // y,
-            "DIV": lambda x,y: x / y
-        }[op](val1, val2)
-        if not stack:
-            self.store(frame, name, type1, val)
-        else:
-            self.stack.append((type1, val))
-
-    def relat(self, instr, op):
-        if op[-1] != "S":   # non-stack version
-            stack = False
-            frame, name = self.var(self.get_arg(instr, 1))
-            type1, val1 = self.symb(self.get_arg(instr, 2))
-            type2, val2 = self.symb(self.get_arg(instr, 3))
-        else:               # stack version
-            if len(self.stack) == 0:
-                error(op + ": Stack is Empty", Err.UndefVal)
-            stack = True
-            op = op[:-1]    # remove stack suffix 'S'
-            symb2 = self.stack.pop()
-            symb1 = self.stack.pop()
-            type1, val1 = symb1[0], symb1[1]
-            type2, val2 = symb2[0], symb2[1]
-        if (type1 == Type.NIL or type2 == Type.NIL):
-            if op != "EQ":
-                error(op + " \"nil\" can only be compared using \"EQ\"", Err.Operands)
-        elif type1 != type2:
-            error(op + ": Operands must be of the same type", Err.Operands)
-        val = {
+            "DIV": lambda x,y: x / y,
+            # relational
             "LT": lambda x,y: x < y,
             "GT": lambda x,y: x > y,
-            "EQ": lambda x,y: x == y
-        }[op](val1, val2)
-        if not stack:
-            self.store(frame, name, Type.BOOL, val)
-        else:
-            self.stack.append((Type.BOOL, val))
-
-    def bools(self, instr, op):
-        if op[-1] != "S":   # non-stack version
-            stack = False
-            frame, name = self.var(self.get_arg(instr, 1))
-            type1, val1 = self.symb(self.get_arg(instr, 2))
-            type2, val2 = self.symb(self.get_arg(instr, 3))
-        else:               # stack version
-            if len(self.stack) == 0:
-                error(op + ": Stack is Empty", Err.UndefVal)
-            stack = True
-            op = op[:-1]    # remove stack suffix 'S'
-            symb2 = self.stack.pop()
-            symb1 = self.stack.pop()
-            type1, val1 = symb1[0], symb1[1]
-            type2, val2 = symb2[0], symb2[1]
-        if type1 != Type.BOOL or type2 != Type.BOOL:
-            error(op + ": Both operands must be of type \"BOOL\"", Err.Operands)
-        val = {
+            "EQ": lambda x,y: x == y,
+            # logical
             "AND": lambda x,y: x and y,
             "OR": lambda x,y: x or y
         }[op](val1, val2)
-        if not stack:
-            self.store(frame, name, Type.BOOL, val)
+
+        # store result
+        if op in {"ADD", "SUB", "MUL", "IDIV", "DIV"}:
+            res_type = type1
         else:
-            self.stack.append((Type.BOOL, val))
+            res_type = Type.BOOL
+        if not stack:
+            self.store(frame, name, res_type, res)
+        else:
+            self.stack.append((res_type, res))
 
     def cond_jmp(self, instr, op):
         label = self.label(self.get_arg(instr, 1), False)
@@ -477,75 +460,12 @@ class Interp:
     def CLEARS(self, instr):
         self.stack.clear()
 
-    """_____arithmetic_____"""
-    def ADD(self, instr):
-        self.arithm(instr, "ADD")
-
-    def SUB(self, instr):
-        self.arithm(instr, "SUB")
-
-    def MUL(self, instr):
-        self.arithm(instr, "MUL")
-
-    def IDIV(self, instr):
-        self.arithm(instr, "IDIV")
-
-    def DIV(self, instr):
-        self.arithm(instr, "DIV")
-
-    def ADDS(self, instr):
-        self.arithm(instr, "ADDS")
-
-    def SUBS(self, instr):
-        self.arithm(instr, "SUBS")
-
-    def MULS(self, instr):
-        self.arithm(instr, "MULS")
-
-    def IDIVS(self, instr):
-        self.arithm(instr, "IDIVS")
-
-    def DIVS(self, instr):
-        self.arithm(instr, "DIVS")
-
-    """_____relational_____"""
-    def LT(self, instr):
-        self.relat(instr, "LT")
-
-    def GT(self, instr):
-        self.relat(instr, "GT")
-
-    def EQ(self, instr):
-        self.relat(instr, "EQ")
-
-    def LTS(self, instr):
-        self.relat(instr, "LTS")
-
-    def GTS(self, instr):
-        self.relat(instr, "GTS")
-
-    def EQS(self, instr):
-        self.relat(instr, "EQS")
-
-    """_____logical_____"""
-    def AND(self, instr):
-        self.bools(instr, "AND")
-
-    def OR(self, instr):
-        self.bools(instr, "OR")
-
     def NOT(self, instr):
         frame, name = self.var(self.get_arg(instr, 1))
         type, val = self.symb(self.get_arg(instr, 2))
         if type != Type.BOOL:
             error("NOT: Operand must be of type \"BOOL\"", Err.Operands)
         self.store(frame, name, Type.BOOL, not val)
-
-    def ANDS(self, instr):
-        self.bools(instr, "ANDS")
-
-    def ORS(self, instr):
-        self.bools(instr, "ORS")
 
     def NOTS(self, instr):
         if len(self.stack) == 0:
@@ -741,14 +661,14 @@ class Interp:
         "CREATEFRAME": (CREATEFRAME, 0), "PUSHFRAME": (PUSHFRAME, 0),
         "POPFRAME": (POPFRAME, 0), "CALL": (CALL, 1), "RETURN": (RETURN, 0),
         "PUSHS": (PUSHS, 1), "POPS": (POPS, 1), "CLEARS": (CLEARS, 0),
-        "ADD": (ADD, 3), "SUB": (SUB, 3), "MUL": (MUL, 3),
-        "IDIV": (IDIV, 3), "DIV": (DIV, 3),
-        "ADDS": (ADDS, 0), "SUBS": (SUBS, 0), "MULS": (MULS, 0),
-        "IDIVS": (IDIVS, 0), "DIVS": (DIVS, 0),
-        "LT": (LT, 3), "GT": (GT, 3), "EQ": (EQ, 3),
-        "LTS": (LTS, 0), "GTS": (GTS, 0), "EQS": (EQS, 0),
-        "AND": (AND, 3), "OR": (OR, 3), "NOT": (NOT, 2),
-        "ANDS": (ANDS, 0), "ORS": (ORS, 0), "NOTS": (NOTS, 0),
+        "ADD": (operations, 3), "SUB": (operations, 3), "MUL": (operations, 3),
+        "IDIV": (operations, 3), "DIV": (operations, 3),
+        "ADDS": (operations, 0), "SUBS": (operations, 0), "MULS": (operations, 0),
+        "IDIVS": (operations, 0), "DIVS": (operations, 0),
+        "LT": (operations, 3), "GT": (operations, 3), "EQ": (operations, 3),
+        "LTS": (operations, 0), "GTS": (operations, 0), "EQS": (operations, 0),
+        "AND": (operations, 3), "OR": (operations, 3), "ANDS": (operations, 0),
+        "ORS": (operations, 0), "NOT": (NOT, 2), "NOTS": (NOTS, 0),
         "INT2CHAR": (INT2CHAR, 2), "STRI2INT": (STRI2INT, 3),
         "INT2FLOAT": (INT2FLOAT, 2), "FLOAT2INT": (FLOAT2INT, 2),
         "INT2CHARS": (INT2CHARS, 0), "STRI2INTS": (STRI2INTS, 0),
@@ -840,7 +760,7 @@ def get_args():
 def main():
     """SETUP"""
     src, stats, stats_file = get_args()
-    interp = Interp(stats, stats_file)
+    interp = Interpret(stats, stats_file)
     # get source code as XML tree
     try:
         root = ET.parse(src).getroot()
