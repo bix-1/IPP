@@ -13,10 +13,11 @@ pack:	clean doc
 	cd ../doc/ && zip ../src/$(LOGIN).zip $(DOC)
 
 doc:
-	pdflatex ../doc/readme1.tex
-	pdflatex ../doc/readme1.tex
-	pdflatex ../doc/readme2.tex
-	pdflatex ../doc/readme2.tex
+	cd ../doc/ && pdflatex readme1.tex
+	cd ../doc/ && pdflatex readme1.tex
+	cd ../doc/ && pdflatex readme2.tex
+	cd ../doc/ && pdflatex readme2.tex
+	cd ../doc/ && rm -f *.log *.out *.aux
 
 check:	pack
 	mkdir testDir/
@@ -33,4 +34,4 @@ test:
 	./test.php --directory=../tests/both/ --recursive >>x.html
 
 clean:
-	rm -rf testDir/ *.zip *.log *.out *.pdf *.aux *.html
+	rm -rf testDir/ *.zip *.pdf *.html
