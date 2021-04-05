@@ -180,9 +180,6 @@ function iterate_tests($handles, &$outputs) {
 function run_test($filename, $handles) {
   check_test_files($filename);
 
-  $out = "";  // for XML output
-  $ret = 0;   // return value
-
   // EXECUTION
   if ($handles->parse) {
     if ($handles->interp) { // parse && interpret
@@ -232,7 +229,7 @@ function check_test_files($filename) {
     $file = fopen($tmp, "w");
     if (!$file) {
       fwrite(STDERR, "ERROR: Failed to create \"$tmp\"\n");
-      exit(41);
+      exit(99);
     }
     fwrite($file, 0);
     fclose($file);
@@ -262,7 +259,7 @@ function get_ret($filename) {
   $file = fopen($filename, "r");
   if (!$file) {
     fwrite(STDERR, "INVALID FILE: Expected return value (.rc)\n");
-    exit(41);
+    exit(99);
   }
   $ret = trim(fgets($file));
   fclose($file);
