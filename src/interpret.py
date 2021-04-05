@@ -129,6 +129,7 @@ class Interpret:
                 "ADD", "SUB", "MUL", "IDIV", "DIV", "ADDS", "SUBS",
                 "MULS", "IDIVS", "DIVS", "LT", "GT", "EQ", "LTS",
                 "GTS", "EQS", "AND", "OR", "ANDS", "ORS",
+                "JUMPIFEQ", "JUMPIFEQS", "JUMPIFNEQ", "JUMPIFNEQS"
             }:
             args = self, instr, opcode
         else:
@@ -240,8 +241,8 @@ class Interpret:
         if (type1 != type2) and type1 != Type.NIL and type2 != Type.NIL:
             error("JUMPIFEQ: Invalid operands", Err.Operands)
         cond = {
-            "EQ": val1 == val2,
-            "NEQ": val1 != val2
+            "JUMPIFEQ": val1 == val2,
+            "JUMPIFNEQ": val1 != val2
         }[op]
         if cond:
             return self.labels[label]
@@ -377,6 +378,21 @@ class Interpret:
         else:
             self.store(frame, name, Type.STRING, type)
 
+    def NOT(self, instr):
+        frame, name = self.var(self.get_arg(instr, 1))
+        type, val = self.symb(self.get_arg(instr, 2))
+        if type != Type.BOOL:
+            error("NOT: Operand must be of type \"BOOL\"", Err.Operands)
+        self.store(frame, name, Type.BOOL, not val)
+
+    def NOTS(self, instr):
+        if len(self.stack) == 0:
+            error("NOTS: Stack is Empty", Err.UndefVal)
+        tmp = self.stack.pop()
+        if tmp[0] != Type.BOOL:
+            error("NOTS: Operand must be of type \"BOOL\"", Err.Operands)
+        self.stack.append((Type.BOOL, not tmp[1]))
+
     """_____frames_____"""
     def CREATEFRAME(self, instr):
         self.frames["TF"] = {}
@@ -415,18 +431,6 @@ class Interpret:
         label = self.label(self.get_arg(instr, 1), False)
         return self.labels[label]
 
-    def JUMPIFEQ(self, instr):
-        return self.cond_jmp(instr, "EQ")
-
-    def JUMPIFNEQ(self, instr):
-        return self.cond_jmp(instr, "NEQ")
-
-    def JUMPIFEQS(self, instr):
-        return self.cond_jmp(instr, "EQS")
-
-    def JUMPIFNEQS(self, instr):
-        return self.cond_jmp(instr, "NEQS")
-
     def EXIT(self, instr):
         type, val = self.symb(self.get_arg(instr, 1))
         if type != Type.INT:
@@ -443,37 +447,22 @@ class Interpret:
             if len(self.stack) == 0:
                 error("PUSHS: Stack is Empty", Err.UndefVal)
             self.stack.append(self.stack[-1])
-            return
-        type, val = self.symb(self.get_arg(instr, 1))
-        self.stack.append((type, val))
+        else:
+            type, val = self.symb(self.get_arg(instr, 1))
+            self.stack.append((type, val))
 
     def POPS(self, instr):
         if len(self.stack) == 0:
             error("POPS: Stack is Empty", Err.UndefVal)
         if len(instr) == 0:
             self.stack.append(self.stack[-1])
-            return
-        frame, name = self.var(self.get_arg(instr, 1))
-        tmp = self.stack.pop()
-        self.store(frame, name, tmp[0], tmp[1])
+        else:
+            frame, name = self.var(self.get_arg(instr, 1))
+            tmp = self.stack.pop()
+            self.store(frame, name, tmp[0], tmp[1])
 
     def CLEARS(self, instr):
         self.stack.clear()
-
-    def NOT(self, instr):
-        frame, name = self.var(self.get_arg(instr, 1))
-        type, val = self.symb(self.get_arg(instr, 2))
-        if type != Type.BOOL:
-            error("NOT: Operand must be of type \"BOOL\"", Err.Operands)
-        self.store(frame, name, Type.BOOL, not val)
-
-    def NOTS(self, instr):
-        if len(self.stack) == 0:
-            error("NOTS: Stack is Empty", Err.UndefVal)
-        tmp = self.stack.pop()
-        if tmp[0] != Type.BOOL:
-            error("NOTS: Operand must be of type \"BOOL\"", Err.Operands)
-        self.stack.append((Type.BOOL, not tmp[1]))
 
     """_____strings_____"""
     def CONCAT(self, instr):
@@ -676,8 +665,8 @@ class Interpret:
         "READ": (READ, 2), "WRITE": (WRITE, 1), "CONCAT": (CONCAT, 3),
         "STRLEN": (STRLEN, 2), "GETCHAR": (GETCHAR, 3),
         "SETCHAR": (SETCHAR, 3), "TYPE": (TYPE, 2), "LABEL": (lambda *args: None, 1),
-        "JUMP": (JUMP, 1), "JUMPIFEQ": (JUMPIFEQ, 3), "JUMPIFNEQ": (JUMPIFNEQ, 3),
-        "JUMPIFEQS": (JUMPIFEQS, 1), "JUMPIFNEQS": (JUMPIFNEQS, 1),
+        "JUMP": (JUMP, 1), "JUMPIFEQ": (cond_jmp, 3), "JUMPIFNEQ": (cond_jmp, 3),
+        "JUMPIFEQS": (cond_jmp, 1), "JUMPIFNEQS": (cond_jmp, 1),
         "EXIT": (EXIT, 1), "DPRINT": (DPRINT, 1), "BREAK": (BREAK, 0)
     }
 
