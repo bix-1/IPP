@@ -53,7 +53,13 @@
         
         Ako už bolo uvedené v~predchádzajúcej kapitole~\ref{sub:struct}, operandy inštrukcií rozšírenia \texttt{STACK} sú získavané z~dátového zásobníku, na ktorý sa taktiež ukladajú ich výsledky. V~ostatných ohľadoch sú interpretované analogicky so svojimi nezásobníkovými verziami.
         
-        Argumenty príkazovej riadky rozšírenia \texttt{STATI} sú spracované spolu so základnými funkciou \texttt{get\_args} a~predané inštancií triedy \texttt{Interpret}. Na sledovanie počtu vykonaných inštrukcií sa využíva vnútorné počítadlo tejto triedy, aktualizované pri zavolaní príslušnej obsluhy prostredníctvom funkcie \texttt{Interpret.run}. Na tomto mieste sa taktiež zväčší hodnota počtu zavolaní aktuálnej inštrukcie v~asociatívnom zozname s~formátom \texttt{order:}~\textit{počet\_zavolaní}, prípadne so doň táto dvojica vloží ako prvý výskyt s~hodnotou~1. Na sledovanie počtu inicializovaných premenných sa využívajú počítadlá aktualizované v~dekonštruktore triedy \texttt{Var} a~vo funkcií \texttt{Var.set} v~prípade, že jej pôvodná hodnota nie je nedefinovaná.
+        Argumenty príkazovej riadky rozšírenia \texttt{STATI} sú spracované spolu so základnými funkciou \texttt{get\_args} a~predané inštancií triedy \texttt{Interpret}. Na sledovanie počtu vykonaných inštrukcií sa využíva vnútorné počítadlo tejto triedy, aktualizované pri zavolaní príslušnej obsluhy prostredníctvom funkcie \texttt{Interpret.run}. Na tomto mieste sa taktiež zväčší hodnota počtu zavolaní aktuálnej inštrukcie v~asociatívnom zozname s~formátom \texttt{order:}~\textit{počet\_zavolaní}, prípadne so doň táto dvojica vloží ako prvý výskyt s~hodnotou~1. Na sledovanie počtu platných inicializovaných premenných sa využívajú počítadlá aktualizované pri zápise hodnoty do premennej funkciou \texttt{Var.set} v~prípade, že jej pôvodná hodnota nie je definovaná, a~pri manipulácií so zásobníkom lokálnych rámcov tak, že v~rámci obsluhy funkcie \dots~sa inicializované premenné:
+        \begin{itemize}
+            \item \texttt{CREATEFRAME}: zahodeného dočasného rámca \textbf{odčítajú},
+            \item \texttt{PUSHFRAME}: prekrytého lokálneho rámca \textbf{odčítajú},
+            \item \texttt{POPFRAME}: zahodeného dočasného rámca odčítajú a~inicializované premenné odkrytého lokálneho rámca sa pripočítajú.
+        \end{itemize}
+        Tieto štatistiky sú na po spracovaní všetkých inštrukcií alebo po zavolaní inštrukcie \texttt{EXIT} zapísané do špecifikovaného súboru.
 
 \section{Testovací skript}
     Skript \texttt{test.php} slúži na testovanie činnosti skriptov \texttt{parse.php} a~\texttt{interpret.py} buď samostatne, alebo ako jednotného funkčného celku.

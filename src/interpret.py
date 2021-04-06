@@ -40,21 +40,13 @@ Type = Enum("Type", "UNDEF INT BOOL STRING FLOAT NIL")
 
 class Var:
     """Represents Value & Type of single variable"""
-    # counters for --stats
-    cnt = 0
-    max = 0
-
     def __init__(self):
         self.type = Type.UNDEF
         self.val = Type.UNDEF
 
-    def __del__(self):
-        Var.cnt -= 1
-
-    def set(self, type, value):
+    def set(self, interp, type, value):
         if self.type == Type.UNDEF:
-            Var.cnt += 1
-            Var.max = max(Var.cnt, Var.max)
+            interp.vars_update(+1)
         self.type = type
         self.val = value
 
@@ -76,6 +68,8 @@ class Interpret:
     calls = []
     stack = []
     # stats
+    var_cnt = 0
+    var_max = 0
     cnt = 0
     hots = {}
     stats = []
@@ -157,11 +151,11 @@ class Interpret:
             error("Variable undefined", Err.UndefVar)
         if frame == "LF":
             try:
-                self.frames[frame][-1][name].set(type, val)
+                self.frames[frame][-1][name].set(self, type, val)
             except:
                 error("Missing Local Frame", Err.UndefFrame)
         else:
-            self.frames[frame][name].set(type, val)
+            self.frames[frame][name].set(self, type, val)
 
     def operations(self, instr, op):
         # get arguments
@@ -247,6 +241,11 @@ class Interpret:
         if cond:
             return self.labels[label]
 
+    """_____stats_____"""
+    def vars_update(self, n):
+        self.var_cnt += n
+        self.var_max = max(self.var_cnt, self.var_max)
+
     def stats_out(self):
         try:
             with open(self.stats_file, "w") as file:
@@ -254,7 +253,7 @@ class Interpret:
                     val = {
                         "insts": self.cnt,
                         "hot": max(self.hots, key=self.hots.get),
-                        "vars": Var().max
+                        "vars": self.var_max
                     }[s]
                     file.write(str(val) + "\n")
         except:
@@ -395,18 +394,35 @@ class Interpret:
 
     """_____frames_____"""
     def CREATEFRAME(self, instr):
+        if self.frames["TF"] != Type.UNDEF:
+            frame = self.frames["TF"]
+            self.vars_update(-len([var for var in frame if frame[var].type != Type.UNDEF]))
         self.frames["TF"] = {}
 
     def PUSHFRAME(self, instr):
         if self.frames["TF"] == Type.UNDEF:
             error("PUSHFRAME: Undefined Temporary Frame", Err.UndefFrame)
+        # sub defined vars from top LF
+        if len(self.frames["LF"]) > 0:
+            frame = self.frames["LF"][-1]
+            self.vars_update(-len([var for var in frame if frame[var].type != Type.UNDEF]))
+
         self.frames["LF"].append(self.frames["TF"])
         self.frames["TF"] = Type.UNDEF
 
     def POPFRAME(self, instr):
         if len(self.frames["LF"]) == 0:
             error("POPFRAME: Missing Local Frame", Err.UndefFrame)
+        # sub defined vars from TF
+        if self.frames["TF"] != Type.UNDEF:
+            frame = self.frames["TF"]
+            self.vars_update(-len([var for var in frame if frame[var].type != Type.UNDEF]))
+
         self.frames["TF"] = self.frames["LF"].pop()
+        # add defined vars from now top LF
+        if len(self.frames["LF"]) > 0:
+            frame = self.frames["LF"][-1]
+            self.vars_update(+len([var for var in frame if frame[var].type != Type.UNDEF]))
 
     """_____flow_control_____"""
     def LABEL(self, instr):
