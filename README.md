@@ -8,5 +8,5 @@ Project for course [IPP](https://www.fit.vut.cz/study/course/14009/.en) (Princip
 - Jakub Bartko xbartk07@stud.fit.vutbr.cz
 ## Usage
 - Clone repo
-- Run scripts from `src/` using `php7.4 src/scriptA.php` & `python3.8 src/scriptB.py`
+- Run scripts from `src/` using `./parse.php --help`, `./interpret.py --help` and `./test.py --help`
 ## NOTES
